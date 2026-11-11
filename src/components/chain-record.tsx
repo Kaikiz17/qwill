@@ -10,6 +10,7 @@ import {
   explainChainError,
   loadRegistry,
   loadWills,
+  DIANA_EXPLORER,
   readWill,
   readWindow,
   saveRegistry,
@@ -86,12 +87,21 @@ export function ChainRecord({ will, keys }: { will: StoredWill; keys: ClaimKeyFi
         <div className="mt-5 space-y-4">
           <p className="text-sm text-ivory">{chainLine(chainWill)}</p>
           {registry ? (
-            <p className="break-all text-sm text-muted">Contract {registry}</p>
+            <p className="break-all text-sm text-muted">
+              Contract{" "}
+              <a className="underline" href={`${DIANA_EXPLORER}/address/${registry}`} target="_blank" rel="noreferrer">
+                {registry}
+              </a>
+            </p>
           ) : (
             <p className="text-sm text-muted">No contract address on this device yet.</p>
           )}
           {windowLine ? <p className="text-sm text-muted">{windowLine}</p> : null}
-          {hash ? <p className="break-all text-sm text-muted">Last transaction {hash}</p> : null}
+          {hash ? (
+            <a className="break-all text-sm text-ivory underline" href={`${DIANA_EXPLORER}/tx/${hash}`} target="_blank" rel="noreferrer">
+              See this transaction on the chain
+            </a>
+          ) : null}
 
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             <Button disabled={Boolean(busy)} onClick={() => void run("connect", async () => {
@@ -216,14 +226,20 @@ export function ChainRecord({ will, keys }: { will: StoredWill; keys: ClaimKeyFi
                 disabled={!account || Boolean(busy) || chainWill?.exists || password.trim().length < 8}
                 onClick={() =>
                   void run("seal", async () => {
-                    if (!account || !registry) return;
-                    setHash(await sealOnChain(will, account, registry, password));
+                    if (!account) return;
+                    let next = registry;
+                    if (!next) {
+                      next = await deployRegistry(account);
+                      setRegistry(next);
+                    }
+                    const tx = await sealOnChain(will, account, next, password);
+                    setHash(tx);
                     setPassword("");
-                    await refresh(registry);
+                    await refresh(next);
                   })
                 }
               >
-                {busy === "seal" ? "Recording…" : "Record this will"}
+                {busy === "seal" ? "Recording…" : "Put this will on the chain"}
               </Button>
               <Button
                 variant="quiet"
@@ -295,7 +311,7 @@ export function ChainRecord({ will, keys }: { will: StoredWill; keys: ClaimKeyFi
 }
 
 function chainLine(will: ChainWill | null): string {
-  if (!will?.exists) return "This will is not on the chain yet.";
+  if (!will?.exists) return "This will is still only on this phone. Put it on the chain below. A search will not find the letter. The letter is locked.";
   if (will.cancelled) return "Cancelled on the chain. Heirs cannot file.";
   if (will.opened) {
     return `${will.claimCount} of ${will.threshold} heirs have filed. The letter is still only on this device.`;

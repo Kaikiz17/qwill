@@ -22,6 +22,7 @@ export const DIANA_HEX = "0x2648";
 export const COSMOS_CHAIN_ID = "qorechain-diana";
 export const DIANA_RPC = "https://evm-testnet.qore.host";
 export const DIANA_REST = "https://api-testnet.qore.host";
+export const DIANA_EXPLORER = "https://explore.qore.network";
 export const PQC_PRECOMPILE = "0x0000000000000000000000000000000000000a01";
 const REGISTRY_KEY = "qwill.registry.diana";
 
