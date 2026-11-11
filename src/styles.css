@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #14120e;
+  --color-ink-2: #1c1914;
+  --color-panel: #242017;
+  --color-line: #3a342b;
+  --color-ivory: #f4efe6;
+  --color-muted: #9c9486;
+  --color-pulse: #e0a15a;
+  --font-sans: "Figtree", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, "Times New Roman", serif;
+  --radius-md: 0.75rem;
+  --radius-lg: 1.25rem;
+}
+
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  summary {
+    cursor: pointer;
+  }
+
+  html,
+  body {
+    background: var(--color-ink);
+    color: var(--color-ivory);
+  }
+
+  ::selection {
+    background: var(--color-pulse);
+    color: var(--color-ink);
+  }
+}
+
+@keyframes qwill-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.pulse-live {
+  animation: qwill-breathe 2.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-live {
+    animation: none;
+    opacity: 1;
+  }
+}

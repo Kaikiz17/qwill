@@ -1,0 +1,13 @@
+{
+  "name": "qwill-contracts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.26.0"
+  }
+}
