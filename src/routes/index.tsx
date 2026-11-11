@@ -37,8 +37,8 @@ function Empty() {
         A will for what they will need later.
       </h1>
       <p className="mt-5 text-base leading-relaxed text-muted">
-        Write a letter and a secret. Check in on a schedule. If you go quiet, your heirs open it together. A stolen
-        ordinary key cannot check in, cancel it, or take a share.
+        Write a letter and a secret. QoreX records the locked letter on the chain when you create it. If you go quiet,
+        your heirs open it together. A stolen ordinary key cannot check in, cancel it, or take a share.
       </p>
       <div className="mt-8">
         <LinkButton to="/write">Write a will</LinkButton>

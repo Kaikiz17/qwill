@@ -2,8 +2,16 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import { Button, LinkButton, Notice, fieldClass } from "@/components/qwill-ui";
 import { Shell } from "@/components/shell";
+import {
+  connectQorex,
+  deployRegistry,
+  explainChainError,
+  loadRegistry,
+  sealOnChain,
+} from "@/lib/qwill/chain";
 import { INTERVALS, sealWill, type IntervalId } from "@/lib/qwill/protocol";
 import { holdClaimKeys, useWills } from "@/lib/qwill/store";
+import type { Hex } from "viem";
 
 export const Route = createFileRoute("/write")({
   component: WritePage,
@@ -27,6 +35,8 @@ function WriteForm() {
   const [threshold, setThreshold] = useState(2);
   const [interval, setInterval] = useState<IntervalId>("30");
   const [keep, setKeep] = useState(true);
+  const [account, setAccount] = useState<Hex | null>(null);
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -44,6 +54,8 @@ function WriteForm() {
     if (!title.trim()) return setError("Give the will a name.");
     if (!letter.trim()) return setError("Write the letter.");
     if (!secret.trim()) return setError("Put a secret in it. A seed, a location, a sentence.");
+    if (password.trim().length < 8) return setError("Choose a password of at least 8 characters. A new phone needs it.");
+    if (!account) return setError("Connect QoreX first. A will is recorded on the chain as it is created.");
     if (filled.length < 2) return setError("Name at least two heirs. One person should not be able to open this alone.");
     if (new Set(filled.map((name) => name.toLowerCase())).size !== filled.length) {
       return setError("Each heir needs their own name.");
@@ -62,11 +74,13 @@ function WriteForm() {
         keepClaimKeys: keep,
         now: Date.now(),
       });
+      const registry = loadRegistry() ?? (await deployRegistry(account));
+      await sealOnChain(will, account, registry, password.trim());
       holdClaimKeys(will.packet.id, claimKeys);
       upsertWill(will);
       void navigate({ to: "/wills/$willId", params: { willId: will.packet.id } });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not seal the will.");
+      setError(explainChainError(err));
       setBusy(false);
     }
   }
@@ -79,9 +93,24 @@ function WriteForm() {
         </LinkButton>
         <h1 className="mt-4 font-display text-4xl text-ivory">Write a will</h1>
         <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
-          Sealed on this device. Heirs need the keys you give them, and they need each other. You check in to keep it
-          shut.
+          QoreX signs it, and the locked letter goes on the chain as soon as you create it. It does not sit only on this
+          phone. Heirs still need the keys you give them, and they need each other.
         </p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            void connectQorex()
+              .then(setAccount)
+              .catch((err: unknown) => setError(explainChainError(err)))
+          }
+        >
+          {account ? "QoreX connected" : "Connect QoreX"}
+        </Button>
+        {account ? <p className="break-all text-sm text-muted">{account}</p> : null}
       </div>
 
       <label className="block">
@@ -191,10 +220,25 @@ function WriteForm() {
         </span>
       </label>
 
+      <label className="block">
+        <span className="mb-2 block text-sm text-ivory">Password</span>
+        <input
+          className={fieldClass}
+          type="password"
+          value={password}
+          autoComplete="new-password"
+          placeholder="At least 8 characters"
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        <span className="mt-2 block text-sm text-muted">
+          A new phone asks for this after you connect the same wallet. QoreX does not store it.
+        </span>
+      </label>
+
       {error ? <Notice>{error}</Notice> : null}
 
-      <Button type="submit" disabled={busy}>
-        {busy ? "Sealing…" : "Seal the will"}
+      <Button type="submit" disabled={busy || !account || password.trim().length < 8}>
+        {busy ? "Waiting on QoreX…" : "Create the will"}
       </Button>
     </form>
   );

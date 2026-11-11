@@ -34,19 +34,12 @@ export function ChainRecord({ will, keys }: { will: StoredWill; keys: ClaimKeyFi
   const [password, setPassword] = useState("");
   const rememberLocked = useWills((state) => state.rememberLocked);
 
-  async function refresh(nextRegistry = registry, nextAccount = account) {
+  async function refresh(nextRegistry = registry) {
     if (!nextRegistry) {
       setChainWill(null);
       return;
     }
     setChainWill(await readWill(nextRegistry, will.packet.id));
-    if (!nextAccount) return;
-    try {
-      const open = await readWindow(nextAccount);
-      setWindowLine(open.live ? describeWindow(open.remainingTxs, open.allowedTargets) : "No window is open.");
-    } catch {
-      setWindowLine("The window could not be read.");
-    }
   }
 
   useEffect(() => {
@@ -139,8 +132,7 @@ export function ChainRecord({ will, keys }: { will: StoredWill; keys: ClaimKeyFi
                       if (!account) return;
                       const address = await deployRegistry(account);
                       setRegistry(address);
-                      setHash(address);
-                      await refresh(address, account);
+                      await refresh(address);
                     })
                   }
                 >
@@ -161,7 +153,7 @@ export function ChainRecord({ will, keys }: { will: StoredWill; keys: ClaimKeyFi
                     const address = saveRegistry(draft.trim());
                     setRegistry(address);
                     setDraft("");
-                    await refresh(address, account);
+                    await refresh(address);
                   });
                 }}
               >
@@ -213,9 +205,8 @@ export function ChainRecord({ will, keys }: { will: StoredWill; keys: ClaimKeyFi
                     if (!account) return;
                     const address = await deployRegistry(account);
                     setRegistry(address);
-                    setHash(address);
                     setChainWill(null);
-                    await refresh(address, account);
+                    await refresh(address);
                   })
                 }
               >
@@ -228,7 +219,7 @@ export function ChainRecord({ will, keys }: { will: StoredWill; keys: ClaimKeyFi
                     if (!account || !registry) return;
                     setHash(await sealOnChain(will, account, registry, password));
                     setPassword("");
-                    await refresh(registry, account);
+                    await refresh(registry);
                   })
                 }
               >
@@ -241,7 +232,7 @@ export function ChainRecord({ will, keys }: { will: StoredWill; keys: ClaimKeyFi
                   void run("beat", async () => {
                     if (!account || !registry) return;
                     setHash(await checkInOnChain(will, account, registry));
-                    await refresh(registry, account);
+                    await refresh(registry);
                   })
                 }
               >
@@ -254,7 +245,7 @@ export function ChainRecord({ will, keys }: { will: StoredWill; keys: ClaimKeyFi
                   void run("cancel", async () => {
                     if (!account || !registry) return;
                     setHash(await cancelOnChain(will, account, registry));
-                    await refresh(registry, account);
+                    await refresh(registry);
                   })
                 }
               >
@@ -287,7 +278,7 @@ export function ChainRecord({ will, keys }: { will: StoredWill; keys: ClaimKeyFi
                     void run(key.heirId, async () => {
                       if (!account || !registry) return;
                       setHash(await claimOnChain(will.packet.id, key, account, registry));
-                      await refresh(registry, account);
+                      await refresh(registry);
                     })
                   }
                 >
