@@ -31,7 +31,3 @@ The tests install a stand-in checker at the same precompile address. The real ch
 ## Window
 
 QoreX does not let a website send `MsgOpenEVMWindow`. Open the EVM access window in the QoreX app. The wallet has no screen for a window limited to one contract.
-
-## AI
-
-See [AI_USAGE.md](AI_USAGE.md). Contract reviews go through QCAI. See [audit/QCAI.md](audit/QCAI.md).
