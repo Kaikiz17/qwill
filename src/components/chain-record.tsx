@@ -74,13 +74,13 @@ export function ChainRecord({ will, keys }: { will: StoredWill; keys: ClaimKeyFi
         the keys you gave them. An ordinary signature is not enough for check-in, cancel, or a claim.
       </p>
       <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
-        The chain clock starts when you record the will, from that moment. It does not copy silence that already happened
-        on this device. The contract already on the testnet cannot hold a letter. Deploy this version, then record again.
-        Testnet coins come from the{" "}
+        The chain clock starts when you record the will. The QoreX window has to allow at least 8 QOR, or the letter is
+        too big and the chain refuses it. Open that window in the QoreX app, not on this page. Set the spending cap to 8
+        QOR and allow at least 5 transactions. Then come back and put the will on the chain. Testnet coins come from the{" "}
         <a className="underline" href="https://dashboard.qorechain.io/faucet" target="_blank" rel="noreferrer">
           faucet
         </a>
-        . QoreX has to sign. This preview cannot see the wallet.
+        .
       </p>
 
       {!ready ? null : (

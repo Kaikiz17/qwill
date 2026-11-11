@@ -111,7 +111,7 @@ function discoverQorex(): Promise<Eip1193 | null> {
 
 async function suggestedFee(): Promise<bigint> {
   const price = await client.getGasPrice();
-  return price > 0n ? price * 2n : 1_000_000_000n;
+  return price > 0n ? (price * 11n) / 10n : 1_000_000_000n;
 }
 
 export async function connectQorex(): Promise<Hex> {
@@ -262,7 +262,7 @@ export async function sealOnChain(will: StoredWill, account: Hex, registry: Hex,
       toHex(vault),
     ],
   });
-  const hash = await send(account, registry, data, 16_000_000n);
+  const hash = await send(account, registry, data, sealGas(data, letter, vault));
   await client.waitForTransactionReceipt({ hash });
   return hash;
 }
@@ -351,6 +351,9 @@ export function explainChainError(err: unknown): string {
       /* not one of ours */
     }
   }
+  if (raw.toLowerCase().includes("window") || raw.toLowerCase().includes("allowance")) {
+    return "The QoreX window is too small, or it is closed. In the QoreX app, open the EVM window and set the spending cap to 8 QOR.";
+  }
   for (const name of ["Signature", "Time", "Quiet", "Done", "Unknown", "Exists", "Heir", "Key", "Heirs", "Interval", "BadId"]) {
     if (raw.includes(name)) return explainName(name);
   }
@@ -369,6 +372,12 @@ function explainName(name: string): string {
   if (name === "Key") return "That key is not the one recorded for this action.";
   if (name === "Interval") return "The waiting period has to be at least an hour.";
   return "The chain refused that.";
+}
+
+function sealGas(data: Hex, letter: Uint8Array, vault: Uint8Array): bigint {
+  const calldata = BigInt((data.length - 2) / 2);
+  const stored = BigInt(letter.length + vault.length);
+  return ((1_500_000n + stored * 700n + calldata * 16n) * 5n) / 4n;
 }
 
 async function send(from: Hex, to: Hex | undefined, data: Hex, gas: bigint): Promise<Hex> {
