@@ -47,9 +47,7 @@ function Claim() {
     <div>
       <h1 className="font-display text-4xl text-ivory">Open a will</h1>
       <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
-        This page is for the heirs, after the check-ins have stopped. Put in the sealed will. Then each heir adds their
-        own key on this phone. One key does nothing. When enough heirs are here, the letter opens. Their keys are not
-        saved into the will, and they leave when this page is closed.
+        This page is for the heirs, after the check-ins have stopped. Paste one sealed will in the first box. Then each heir pastes their own key, one at a time, in the key box below and taps Add this heir. Do not paste two keys together, and do not leave a space between them. One key does nothing. When enough heirs have been added, the letter opens. The keys are not saved into the will.
       </p>
       <label className="mt-8 block">
         <span className="mb-2 flex items-center justify-between text-sm text-ivory">

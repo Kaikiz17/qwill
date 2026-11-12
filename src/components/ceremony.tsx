@@ -115,12 +115,12 @@ export function Ceremony({
         <p className="text-sm text-muted">Paste the key that heir was given.</p>
       )}
       <label className="block">
-        <span className="mb-2 block text-sm text-ivory">Claim key</span>
+        <span className="mb-2 block text-sm text-ivory">One heir key</span>
         <textarea
           className={fieldClass}
           rows={4}
           value={paste}
-          placeholder="Paste a claim key"
+          placeholder="Paste one key. Not two."
           onChange={(event) => setPaste(event.target.value)}
         />
       </label>
