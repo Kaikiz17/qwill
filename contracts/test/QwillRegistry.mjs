@@ -73,20 +73,11 @@ describe("QwillRegistry", function () {
     };
   }
 
-  async function storePieces(id, body, box, atStart) {
-    let at = atStart;
-    const bodies = [
-      [false, chunks(body)],
-      [true, chunks(box)],
-    ];
-    for (const [vault, pieces] of bodies) {
-      for (let index = 0; index < pieces.length; index += 1) {
-        at = await atNextBlock(1);
-        const piece = pieces[index];
-        const part = ethers.keccak256(piece).slice(2);
-        await registry.put(id, vault, index, piece, at, founder, mockSign(founder, putMessage({ willId: id, vault, index, part, at })));
-      }
-    }
+  async function loggedBytes(id, vault) {
+    const key = ethers.keccak256(ethers.toUtf8Bytes(id));
+    const rows = await registry.queryFilter(registry.filters.Locked(key, vault));
+    const ordered = [...rows].sort((a, b) => Number(a.args.index) - Number(b.args.index));
+    return ethers.hexlify(ethers.concat(ordered.map((row) => row.args.data)));
   }
 
   before(async () => {
@@ -119,21 +110,7 @@ describe("QwillRegistry", function () {
       vault: fields.vault,
       parts: fields.parts,
     });
-    await registry.seal(
-      willId,
-      recordedAt,
-      HOUR,
-      2,
-      ids,
-      keys,
-      founder,
-      mockSign(founder, message),
-      ethers.keccak256(letter),
-      ethers.keccak256(vault),
-      fields.letterParts,
-      fields.vaultParts,
-    );
-    await storePieces(willId, letter, vault, recordedAt);
+    await registry.seal(willId, recordedAt, HOUR, 2, ids, keys, founder, mockSign(founder, message), letter, vault);
   }
 
   it("asks the precompile at 0x…0A01 and has no classical action", async () => {
@@ -177,7 +154,7 @@ describe("QwillRegistry", function () {
     });
     const stolen = ethers.hexlify(ethers.randomBytes(64));
     await expect(
-      registry.seal(willId, recordedAt, HOUR, 2, ids, keys, founder, stolen, ethers.keccak256(letter), ethers.keccak256(vault), fields.letterParts, fields.vaultParts),
+      registry.seal(willId, recordedAt, HOUR, 2, ids, keys, founder, stolen, letter, vault),
     ).to.be.revertedWithCustomError(registry, "Signature");
     await expect(
       registry.seal(
@@ -189,15 +166,13 @@ describe("QwillRegistry", function () {
         keys,
         founder,
         mockSign(founder, ethers.toUtf8Bytes("other")),
-        ethers.keccak256(letter),
-        ethers.keccak256(vault),
-        fields.letterParts,
-        fields.vaultParts,
+        letter,
+        vault,
       ),
     ).to.be.revertedWithCustomError(registry, "Signature");
     await sealAt(recordedAt);
-    expect(await registry.letterOf(willId)).to.equal(ethers.hexlify(letter));
-    expect(await registry.vaultOf(willId)).to.equal(ethers.hexlify(vault));
+    expect(await loggedBytes(willId, false)).to.equal(ethers.hexlify(letter));
+    expect(await loggedBytes(willId, true)).to.equal(ethers.hexlify(vault));
     const [signer] = await ethers.getSigners();
     expect(await registry.willsOf(signer.address)).to.deep.equal([willId]);
   });
@@ -241,12 +216,9 @@ describe("QwillRegistry", function () {
       heirs.map((heir) => heir.key),
       founder,
       mockSign(founder, message),
-      ethers.keccak256(letter),
-      ethers.keccak256(vault),
-      fields.letterParts,
-      fields.vaultParts,
+      letter,
+      vault,
     );
-    await storePieces(freshId, letter, vault, recordedAt);
 
     const tooSoon = await atNextBlock(60);
     await expect(
@@ -328,14 +300,10 @@ describe("QwillRegistry", function () {
       keys,
       founder,
       mockSign(founder, message),
-      ethers.keccak256(wide),
-      ethers.keccak256(box),
-      fields.letterParts,
-      fields.vaultParts,
+      wide,
+      box,
     );
-    await storePieces(wideId, wide, box, recordedAt);
-    expect(await registry.letterCount(wideId)).to.equal(2n);
-    expect(await registry.letterOf(wideId)).to.equal(ethers.hexlify(wide));
-    expect(await registry.vaultOf(wideId)).to.equal(ethers.hexlify(box));
+    expect(await loggedBytes(wideId, false)).to.equal(ethers.hexlify(wide));
+    expect(await loggedBytes(wideId, true)).to.equal(ethers.hexlify(box));
   });
 });

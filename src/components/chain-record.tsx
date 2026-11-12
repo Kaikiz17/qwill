@@ -75,8 +75,8 @@ export function ChainRecord({ will, keys }: { will: StoredWill; keys: ClaimKeyFi
         the keys you gave them. An ordinary signature is not enough for check-in, cancel, or a claim.
       </p>
       <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
-        The chain clock starts when you record the will. A long letter is saved in pieces, each under the chain's gas
-        limit. Open the EVM window in the QoreX app and set the spending cap to 20 QOR, with at least 20 transactions.
+        The chain clock starts when you record the will. Creating it is one QoreX approval. Open the EVM window in the
+        QoreX app first, with a spending cap of 20 QOR and at least 20 transactions.
         Testnet coins come from the{" "}
         <a className="underline" href="https://dashboard.qorechain.io/faucet" target="_blank" rel="noreferrer">
           faucet

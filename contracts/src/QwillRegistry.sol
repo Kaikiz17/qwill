@@ -16,6 +16,7 @@ contract QwillRegistry {
     uint64 public constant MIN_INTERVAL = 3_600_000;
     uint64 public constant MAX_INTERVAL = 31_622_400_000;
     uint256 public constant SKEW = 300_000;
+    uint256 public constant ONE_TX = 1;
     uint256 public constant PIECE = 12_000;
     uint256 public constant MAX_BLOB = 1_048_576;
     uint256 public constant MAX_PIECES = 88;
@@ -43,12 +44,14 @@ contract QwillRegistry {
     mapping(bytes32 => bytes32[]) private _vaultParts;
     mapping(bytes32 => bytes[]) private _letterPieces;
     mapping(bytes32 => bytes[]) private _vaultPieces;
+    mapping(bytes32 => uint256) private _loggedBlock;
     mapping(address => string[]) private _byWallet;
 
     event WillSealed(bytes32 indexed willKey, address indexed registrar, uint64 intervalMs, uint8 threshold);
     event WillBeat(bytes32 indexed willKey, uint64 at);
     event WillCancelled(bytes32 indexed willKey, uint64 at);
     event WillClaim(bytes32 indexed willKey, uint8 count, bool opened);
+    event Locked(bytes32 indexed willKey, bool indexed vault, uint16 index, bytes data);
 
     error Unknown();
     error Exists();
@@ -74,10 +77,8 @@ contract QwillRegistry {
         bytes[] calldata heirKeys,
         bytes calldata founderKey,
         bytes calldata signature,
-        bytes32 packetHash,
-        bytes32 vaultHash,
-        bytes32[] calldata letterParts,
-        bytes32[] calldata vaultParts
+        bytes calldata letter,
+        bytes calldata vault
     ) external {
         bytes32 willKey = _id(willId);
         if (_wills[willKey].exists) revert Exists();
@@ -85,8 +86,10 @@ contract QwillRegistry {
         if (count < 2 || count > 5 || heirKeys.length != count) revert Heirs();
         if (threshold < 2 || threshold > count) revert Heirs();
         if (intervalMs < MIN_INTERVAL || intervalMs > MAX_INTERVAL) revert Interval();
-        if (letterParts.length == 0 || vaultParts.length == 0) revert Empty();
-        if (letterParts.length > MAX_PIECES || vaultParts.length > MAX_PIECES) revert Huge();
+        if (letter.length == 0 || vault.length == 0) revert Empty();
+        if (letter.length > MAX_BLOB || vault.length > MAX_BLOB) revert Huge();
+        bytes32[] memory letterParts = _chunkHashes(letter);
+        bytes32[] memory vaultParts = _chunkHashes(vault);
         _near(recordedAt);
 
         bytes memory message = previewSeal(
@@ -97,8 +100,8 @@ contract QwillRegistry {
             heirIds,
             heirKeys,
             founderKey,
-            packetHash,
-            vaultHash,
+            keccak256(letter),
+            keccak256(vault),
             letterParts,
             vaultParts
         );
@@ -127,6 +130,9 @@ contract QwillRegistry {
 
         _letterParts[willKey] = letterParts;
         _vaultParts[willKey] = vaultParts;
+        _emitLocked(willKey, false, letter);
+        _emitLocked(willKey, true, vault);
+        _loggedBlock[willKey] = block.number;
         _byWallet[msg.sender].push(willId);
 
         emit WillSealed(willKey, msg.sender, intervalMs, threshold);
@@ -254,6 +260,10 @@ contract QwillRegistry {
 
     function vaultOf(string calldata willId) external view returns (bytes memory) {
         return _join(_vaultPieces[_id(willId)]);
+    }
+
+    function blockOf(string calldata willId) external view returns (uint256) {
+        return _loggedBlock[_id(willId)];
     }
 
     function letterCount(string calldata willId) external view returns (uint256) {
@@ -398,6 +408,28 @@ contract QwillRegistry {
 
     function _join(bytes[] storage parts) internal view returns (bytes memory out) {
         for (uint256 i = 0; i < parts.length; i++) out = bytes.concat(out, parts[i]);
+    }
+
+    function _chunkHashes(bytes calldata blob) internal pure returns (bytes32[] memory parts) {
+        uint256 count = (blob.length + PIECE - 1) / PIECE;
+        if (count == 0 || count > MAX_PIECES) revert Huge();
+        parts = new bytes32[](count);
+        for (uint256 i = 0; i < count; i++) {
+            uint256 start = i * PIECE;
+            uint256 end = start + PIECE;
+            if (end > blob.length) end = blob.length;
+            parts[i] = keccak256(blob[start:end]);
+        }
+    }
+
+    function _emitLocked(bytes32 willKey, bool vault, bytes calldata blob) internal {
+        uint256 count = (blob.length + PIECE - 1) / PIECE;
+        for (uint256 i = 0; i < count; i++) {
+            uint256 start = i * PIECE;
+            uint256 end = start + PIECE;
+            if (end > blob.length) end = blob.length;
+            emit Locked(willKey, vault, uint16(i), blob[start:end]);
+        }
     }
 
     function _parts(bytes32[] memory letterParts, bytes32[] memory vaultParts) internal pure returns (string memory) {

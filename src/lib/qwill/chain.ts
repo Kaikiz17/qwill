@@ -11,7 +11,7 @@ import {
 } from "viem";
 import { defineChain } from "viem";
 import { b64ToBytes, bytesToB64, fromUtf8, utf8 } from "./bytes";
-import { beatMessage, claimMessage, putMessage, sealMessage, vetoMessage } from "./chain-messages.mjs";
+import { beatMessage, claimMessage, sealMessage, vetoMessage } from "./chain-messages.mjs";
 import { dsaPublic, lockWithPassword, signDsa } from "./crypto";
 import type { ClaimKeyFile, SealedPacket, StoredWill } from "./protocol";
 import { registryAbi, registryBytecode } from "./registry-artifact";
@@ -240,8 +240,8 @@ export async function ensureRegistry(account: Hex): Promise<Hex> {
   const saved = loadRegistry();
   if (saved) {
     try {
-      const size = await client.readContract({ address: saved, abi: registryAbi, functionName: "PIECE" });
-      if (size === BigInt(PIECE_BYTES)) return saved;
+      const flag = await client.readContract({ address: saved, abi: registryAbi, functionName: "ONE_TX" });
+      if (flag === 1n) return saved;
     } catch {
       /* the saved contract cannot hold a long letter */
     }
@@ -292,23 +292,14 @@ export async function sealOnChain(will: StoredWill, account: Hex, registry: Hex,
       heirs.map((heir) => toHex(heir.key)),
       toHex(founderKey),
       toHex(signature),
-      keccak256(letter),
-      keccak256(vault),
-      letterParts,
-      vaultParts,
+      toHex(letter),
+      toHex(vault),
     ],
   });
-  let hash: Hex;
-  try {
-    hash = await send(account, registry, data, 12_000_000n);
-    const receipt = await client.waitForTransactionReceipt({ hash });
-    if (receipt.status !== "success") throw new Error("The chain refused the will. It was not created.");
-  } catch (err) {
-    if (!explainChainError(err).includes("already recorded")) throw err;
-    hash = "0x";
-  }
-  hash = await putPieces(will, account, registry, founderKey, false, letterPieces, hash);
-  return putPieces(will, account, registry, founderKey, true, vaultPieces, hash);
+  const hash = await send(account, registry, data, sealGas(letter, vault));
+  const receipt = await client.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") throw new Error("The chain refused the will. It was not created.");
+  return hash;
 }
 
 export async function loadWills(account: Hex, registry: Hex): Promise<{ packet: SealedPacket; vault: string }[]> {
@@ -320,8 +311,8 @@ export async function loadWills(account: Hex, registry: Hex): Promise<{ packet: 
   })) as string[];
   const found: { packet: SealedPacket; vault: string }[] = [];
   for (const id of ids) {
-    const letter = await readPieces(registry, id, false);
-    const vault = await readPieces(registry, id, true);
+    const letter = await readLocked(registry, id, false);
+    const vault = await readLocked(registry, id, true);
     if (letter.length === 0 || vault.length === 0) continue;
     const packet = JSON.parse(fromUtf8(letter)) as SealedPacket;
     if (packet?.kind !== "qwill" || packet.id !== id) continue;
@@ -330,12 +321,12 @@ export async function loadWills(account: Hex, registry: Hex): Promise<{ packet: 
   return found;
 }
 
-export async function checkInOnChain(will: StoredWill, account: Hex, registry: Hex): Promise<Hex> {
-  return founderAction(will, account, registry, "checkIn");
+export async function checkInOnChain(will: StoredWill, account: Hex, registry: Hex, at = Date.now()): Promise<Hex> {
+  return founderAction(will, account, registry, "checkIn", at);
 }
 
-export async function cancelOnChain(will: StoredWill, account: Hex, registry: Hex): Promise<Hex> {
-  return founderAction(will, account, registry, "cancel");
+export async function cancelOnChain(will: StoredWill, account: Hex, registry: Hex, at = Date.now()): Promise<Hex> {
+  return founderAction(will, account, registry, "cancel", at);
 }
 
 async function founderAction(
@@ -343,8 +334,8 @@ async function founderAction(
   account: Hex,
   registry: Hex,
   action: "checkIn" | "cancel",
+  at: number,
 ): Promise<Hex> {
-  const at = Date.now();
   const founderKey = b64ToBytes(will.packet.founder.dsa);
   const message = action === "checkIn" ? beatMessage(will.packet.id, at) : vetoMessage(will.packet.id, at);
   const signature = b64ToBytes(signDsa(will.founder.dsaSk, message));
@@ -420,72 +411,42 @@ function partsField(letterParts: Hex[], vaultParts: Hex[]): string {
   return `${hex(letterParts)}|${hex(vaultParts)}`;
 }
 
-function putGas(piece: Uint8Array): bigint {
-  const size = BigInt(piece.length);
-  const need = 2_000_000n + size * 650n + (size + 8_000n) * 16n;
+function sealGas(letter: Uint8Array, vault: Uint8Array): bigint {
+  const size = BigInt(letter.length + vault.length);
+  const need = 3_000_000n + size * 40n;
   const cap = 29_000_000n;
   return need > cap ? cap : need;
 }
 
-async function putPieces(
-  will: StoredWill,
-  account: Hex,
-  registry: Hex,
-  founderKey: Uint8Array,
-  vault: boolean,
-  pieces: Uint8Array[],
-  previous: Hex,
-): Promise<Hex> {
-  const stored = Number(
-    await client.readContract({
-      address: registry,
-      abi: registryAbi,
-      functionName: vault ? "vaultCount" : "letterCount",
-      args: [will.packet.id],
-    }),
-  );
-  let hash = previous;
-  for (let index = stored; index < pieces.length; index += 1) {
-    const at = Date.now();
-    const piece = pieces[index]!;
-    const message = putMessage({
-      willId: will.packet.id,
-      vault,
-      index,
-      part: keccak256(piece).slice(2),
-      at,
-    });
-    const signature = b64ToBytes(signDsa(will.founder.dsaSk, message));
-    const data = encodeFunctionData({
-      abi: registryAbi,
-      functionName: "put",
-      args: [will.packet.id, vault, BigInt(index), toHex(piece), BigInt(at), toHex(founderKey), toHex(signature)],
-    });
-    hash = await send(account, registry, data, putGas(piece));
-    const receipt = await client.waitForTransactionReceipt({ hash });
-    if (receipt.status !== "success") throw new Error("The chain refused the will. It was not created.");
-  }
-  return hash;
-}
-
-async function readPieces(registry: Hex, willId: string, vault: boolean): Promise<Uint8Array> {
-  const count = Number(
-    await client.readContract({
-      address: registry,
-      abi: registryAbi,
-      functionName: vault ? "vaultCount" : "letterCount",
-      args: [willId],
-    }),
-  );
+async function readLocked(registry: Hex, willId: string, vault: boolean): Promise<Uint8Array> {
+  const block = (await client.readContract({
+    address: registry,
+    abi: registryAbi,
+    functionName: "blockOf",
+    args: [willId],
+  })) as bigint;
+  if (block === 0n) return new Uint8Array();
+  const logs = await client.getLogs({
+    address: registry,
+    event: {
+      type: "event",
+      name: "Locked",
+      inputs: [
+        { name: "willKey", type: "bytes32", indexed: true },
+        { name: "vault", type: "bool", indexed: true },
+        { name: "index", type: "uint16", indexed: false },
+        { name: "data", type: "bytes", indexed: false },
+      ],
+    },
+    args: { willKey: keccak256(utf8(willId)), vault },
+    fromBlock: block,
+    toBlock: block,
+  });
+  const ordered = [...logs].sort((a, b) => Number(a.args.index) - Number(b.args.index));
   const parts: Uint8Array[] = [];
-  for (let index = 0; index < count; index += 1) {
-    const piece = (await client.readContract({
-      address: registry,
-      abi: registryAbi,
-      functionName: "pieceOf",
-      args: [willId, vault, BigInt(index)],
-    })) as Hex;
-    parts.push(hexToBytes(piece));
+  for (const log of ordered) {
+    if (!log.args.data) continue;
+    parts.push(hexToBytes(log.args.data));
   }
   const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
   let offset = 0;

@@ -79,7 +79,7 @@ function WriteForm() {
       const recorded = await readWill(registry, will.packet.id);
       if (!recorded.exists) throw new Error("The chain did not keep this will. It was not created.");
       holdClaimKeys(will.packet.id, claimKeys);
-      upsertWill(will);
+      upsertWill({ ...will, registry });
       void navigate({ to: "/wills/$willId", params: { willId: will.packet.id } });
     } catch (err) {
       setError(explainChainError(err));
@@ -100,8 +100,7 @@ function WriteForm() {
         </p>
         <Notice>
           Before you create it, open the EVM window in the QoreX app. Set the spending cap to 20 QOR and allow 20
-          transactions. A short letter is one or two approvals. A long letter asks again for each piece. If QoreX
-          refuses, the will is not created.
+          transactions. Creating the will is one approval. If QoreX refuses, the will is not created.
         </Notice>
       </div>
 

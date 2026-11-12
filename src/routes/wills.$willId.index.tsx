@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ChainRecord } from "@/components/chain-record";
 import { Ceremony } from "@/components/ceremony";
 import { Button, LinkButton, Notice, Pulse, VerdictCard } from "@/components/qwill-ui";
+import { cancelOnChain, checkInOnChain, connectQorex, explainChainError, loadRegistry } from "@/lib/qwill/chain";
 import { copyText, downloadJson, formatRemain, formatWhen } from "@/lib/qwill/format";
 import {
   INTERVALS,
@@ -65,12 +66,32 @@ function WillView({ will }: { will: StoredWill }) {
   const interval =
     INTERVALS.find((item) => item.ms === will.packet.intervalMs)?.label ?? formatRemain(will.packet.intervalMs);
 
-  async function run(action: "beat" | "cancel", kind: "pq" | "classical") {
+  async function showStolen(action: "beat" | "cancel") {
+    const result = action === "beat" ? await checkIn(will, Date.now(), "classical") : await cancelWill(will, Date.now(), "classical");
+    upsertWill(result.will);
+    setVerdict(result.verdict);
+  }
+
+  async function run(action: "beat" | "cancel") {
     setBusy(true);
+    setVerdict(null);
     try {
-      const result = action === "beat" ? await checkIn(will, Date.now(), kind) : await cancelWill(will, Date.now(), kind);
-      upsertWill(result.will);
+      const account = await connectQorex();
+      const registry = will.registry ? (will.registry as `0x${string}`) : loadRegistry();
+      if (!registry) throw new Error("This will is not on the chain yet.");
+      const at = Date.now();
+      if (action === "beat") await checkInOnChain(will, account, registry, at);
+      else await cancelOnChain(will, account, registry, at);
+      const result = action === "beat" ? await checkIn(will, at, "pq") : await cancelWill(will, at, "pq");
+      upsertWill({ ...result.will, registry });
       setVerdict(result.verdict);
+    } catch (err) {
+      setVerdict({
+        ok: false,
+        oldLockOpens: false,
+        title: "Not signed",
+        detail: explainChainError(err),
+      });
     } finally {
       setBusy(false);
     }
@@ -114,8 +135,8 @@ function WillView({ will }: { will: StoredWill }) {
           <>
             <p className="font-display text-2xl text-ivory">Check in within {formatRemain(due - now)}</p>
             <p className="mt-2 text-sm text-muted">Before {formatWhen(due)}. Silence after that wakes the will.</p>
-            <Button className="mt-5" disabled={busy} onClick={() => void run("beat", "pq")}>
-              {busy ? "Signing…" : "Check in"}
+            <Button className="mt-5" disabled={busy} onClick={() => void run("beat")}>
+              {busy ? "Waiting on QoreX…" : "Check in"}
             </Button>
           </>
         ) : null}
@@ -127,10 +148,10 @@ function WillView({ will }: { will: StoredWill }) {
               for good.
             </p>
             <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-              <Button disabled={busy} onClick={() => void run("beat", "pq")}>
+              <Button disabled={busy} onClick={() => void run("beat")}>
                 Check in — I am here
               </Button>
-              <Button variant="quiet" disabled={busy} onClick={() => void run("cancel", "pq")}>
+              <Button variant="quiet" disabled={busy} onClick={() => void run("cancel")}>
                 Cancel the will
               </Button>
             </div>
@@ -209,10 +230,10 @@ function WillView({ will }: { will: StoredWill }) {
           check-in, the cancel, and the share.
         </p>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <Button variant="quiet" disabled={busy || status === "revoked"} onClick={() => void run("beat", "classical")}>
+          <Button variant="quiet" disabled={busy || status === "revoked"} onClick={() => void showStolen("beat")}>
             Stolen key checks in
           </Button>
-          <Button variant="quiet" disabled={busy || status === "revoked"} onClick={() => void run("cancel", "classical")}>
+          <Button variant="quiet" disabled={busy || status === "revoked"} onClick={() => void showStolen("cancel")}>
             Stolen key cancels
           </Button>
         </div>

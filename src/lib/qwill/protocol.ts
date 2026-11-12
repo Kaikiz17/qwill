@@ -83,6 +83,7 @@ export type StoredWill = {
   founderRead: { kemCt: string; iv: string; ct: string } | null;
   claimKeys: ClaimKeyFile[] | null;
   notes: { at: number; text: string }[];
+  registry?: string;
 };
 
 export type WillStatus = "alive" | "claimable" | "revoked";
