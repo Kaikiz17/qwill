@@ -335,6 +335,14 @@ export async function loadWills(account: Hex, registry: Hex): Promise<{ packet: 
   return found;
 }
 
+export async function loadPacket(registry: Hex, willId: string): Promise<SealedPacket> {
+  const letter = await readLocked(registry, willId, false);
+  if (letter.length === 0) throw new Error("That contract has no letter for this will.");
+  const packet = JSON.parse(fromUtf8(letter)) as SealedPacket;
+  if (packet?.kind !== "qwill" || packet.id !== willId) throw new Error("The letter on the chain could not be read.");
+  return packet;
+}
+
 export async function checkInOnChain(will: StoredWill, account: Hex, registry: Hex, at = Date.now()): Promise<Hex> {
   return founderAction(will, account, registry, "checkIn", at);
 }
