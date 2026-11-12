@@ -53,6 +53,7 @@ function WillView({ will }: { will: StoredWill }) {
   const [plain, setPlain] = useState<PlainWill | null>(null);
   const [readError, setReadError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [copyFallback, setCopyFallback] = useState<string | null>(null);
   const [armRemove, setArmRemove] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
   const [gatePassword, setGatePassword] = useState("");
@@ -119,6 +120,19 @@ function WillView({ will }: { will: StoredWill }) {
       setGateError(explainChainError(err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function shareJson(id: string, value: unknown) {
+    const text = JSON.stringify(value, null, 2);
+    try {
+      await copyText(text);
+      setCopyFallback(null);
+      setCopied(id);
+      window.setTimeout(() => setCopied(null), 2000);
+    } catch {
+      setCopied(null);
+      setCopyFallback(text);
     }
   }
 
@@ -208,13 +222,7 @@ function WillView({ will }: { will: StoredWill }) {
                     onClick={() => {
                       const key = keys.find((item) => item.heirId === heir.id);
                       if (!key) return;
-                      void copyText(JSON.stringify(key)).then(
-                        () => {
-                          setCopied(heir.id);
-                          window.setTimeout(() => setCopied(null), 2000);
-                        },
-                        () => setCopied("fail"),
-                      );
+                      void shareJson(heir.id, key);
                     }}
                   >
                     {copied === heir.id ? "Copied" : "Copy key"}
@@ -245,9 +253,14 @@ function WillView({ will }: { will: StoredWill }) {
         <h2 className="font-display text-2xl text-ivory">Letter</h2>
         <div className="mt-4">
           {unlocked ? (
-            <Button variant="quiet" onClick={() => void read()}>
-              {plain ? "Hide the letter" : "Read what you sealed"}
-            </Button>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button variant="quiet" onClick={() => void read()}>
+                {plain ? "Hide the letter" : "Read what you sealed"}
+              </Button>
+              <Button variant="quiet" onClick={() => void shareJson("packet", will.packet)}>
+                {copied === "packet" ? "Copied" : "Copy sealed will"}
+              </Button>
+            </div>
           ) : (
             <form
               className="max-w-xl space-y-3"
@@ -273,6 +286,9 @@ function WillView({ will }: { will: StoredWill }) {
               {gateError ? <Notice>{gateError}</Notice> : null}
             </form>
           )}
+          {copyFallback ? (
+            <textarea className={`${fieldClass} mt-4`} rows={6} readOnly value={copyFallback} onFocus={(event) => event.target.select()} />
+          ) : null}
           {readError ? (
             <div className="mt-3">
               <Notice>{readError}</Notice>
@@ -319,8 +335,14 @@ function WillView({ will }: { will: StoredWill }) {
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
             {unlocked ? (
               <>
+                <Button variant="quiet" onClick={() => void shareJson("packet", will.packet)}>
+                  {copied === "packet" ? "Copied" : "Copy sealed will"}
+                </Button>
                 <Button variant="quiet" onClick={() => downloadJson(packetFileName(will.packet.title), will.packet)}>
                   Download sealed will
+                </Button>
+                <Button variant="quiet" onClick={() => void shareJson("founder", will.founder)}>
+                  {copied === "founder" ? "Copied" : "Copy founder key"}
                 </Button>
                 <Button variant="quiet" onClick={() => downloadJson("founder.qwill-key.json", will.founder)}>
                   Download founder key
@@ -330,9 +352,12 @@ function WillView({ will }: { will: StoredWill }) {
                 </LinkButton>
               </>
             ) : (
-              <p className="text-sm text-muted">Sign and unlock before downloading a key.</p>
+              <p className="text-sm text-muted">Sign and unlock before copying a key.</p>
             )}
           </div>
+          {copyFallback ? (
+            <textarea className={`${fieldClass} mt-4`} rows={6} readOnly value={copyFallback} onFocus={(event) => event.target.select()} />
+          ) : null}
         </section>
 
         <section className="mt-10">
