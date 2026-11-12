@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Ceremony } from "@/components/ceremony";
-import { Button, LinkButton, Notice, Pulse, VerdictCard } from "@/components/qwill-ui";
+import { Button, LinkButton, Notice, Pulse, VerdictCard, fieldClass } from "@/components/qwill-ui";
+import { explainChainError, loadRegistry, proveAccess } from "@/lib/qwill/chain";
 import { formatWhen } from "@/lib/qwill/format";
 import {
   cancelWill,
@@ -71,6 +72,9 @@ function Rehearse({
 }) {
   const [busy, setBusy] = useState(false);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
+  const [unlocked, setUnlocked] = useState(false);
+  const [gatePassword, setGatePassword] = useState("");
+  const [gateError, setGateError] = useState<string | null>(null);
   const status = willStatus(drill.will.packet, drill.virtualNow);
   const due = deadline(drill.will.packet);
   const keys = drill.will.claimKeys ?? live.claimKeys ?? peekClaimKeys(live.packet.id) ?? [];
@@ -95,6 +99,49 @@ function Rehearse({
     const next = deadline(drill.will.packet) + 60_000;
     onChange({ ...drill, virtualNow: next });
     setVerdict(null);
+  }
+
+  if (!unlocked) {
+    return (
+      <article>
+        <LinkButton to="/wills/$willId" params={{ willId: live.packet.id }} variant="ghost">
+          Back to the will
+        </LinkButton>
+        <h1 className="mt-4 font-display text-4xl text-ivory">Rehearse</h1>
+        <form
+          className="mt-6 max-w-xl space-y-3"
+          onSubmit={(event: FormEvent) => {
+            event.preventDefault();
+            setBusy(true);
+            setGateError(null);
+            const registry = live.registry ? (live.registry as `0x${string}`) : loadRegistry();
+            void (registry
+              ? proveAccess(live, gatePassword, registry)
+              : Promise.reject(new Error("This will is not on the chain yet."))
+            )
+              .then(() => {
+                setUnlocked(true);
+                setGatePassword("");
+              })
+              .catch((err: unknown) => setGateError(explainChainError(err)))
+              .finally(() => setBusy(false));
+          }}
+        >
+          <p className="text-sm leading-relaxed text-muted">Sign with QoreX before this copy can use the heir keys.</p>
+          <input
+            className={fieldClass}
+            type="password"
+            value={gatePassword}
+            placeholder="Password"
+            onChange={(event) => setGatePassword(event.target.value)}
+          />
+          <Button type="submit" disabled={busy || gatePassword.trim().length < 8}>
+            {busy ? "Waiting on QoreX…" : "Sign and unlock"}
+          </Button>
+          {gateError ? <Notice>{gateError}</Notice> : null}
+        </form>
+      </article>
+    );
   }
 
   return (

@@ -12,7 +12,7 @@ import {
 import { defineChain } from "viem";
 import { b64ToBytes, bytesToB64, fromUtf8, utf8 } from "./bytes";
 import { beatMessage, claimMessage, sealMessage, vetoMessage } from "./chain-messages.mjs";
-import { dsaPublic, lockWithPassword, signDsa } from "./crypto";
+import { dsaPublic, lockWithPassword, openWithPassword, signDsa } from "./crypto";
 import type { ClaimKeyFile, SealedPacket, StoredWill } from "./protocol";
 import { registryAbi, registryBytecode } from "./registry-artifact";
 import { encodeOpenEvmWindow } from "./window-bytes.mjs";
@@ -114,10 +114,24 @@ async function suggestedFee(): Promise<bigint> {
   return price > 0n ? (price * 11n) / 10n : 1_000_000_000n;
 }
 
+export async function proveAccess(will: StoredWill, password: string, registry: Hex): Promise<void> {
+  if (password.trim().length < 8) throw new Error("Enter the password for this will.");
+  const vault = await readLocked(registry, will.packet.id, true);
+  if (vault.length === 0) throw new Error("The locked key is not on this contract.");
+  const opened = JSON.parse(fromUtf8(await openWithPassword(password.trim(), vault))) as { kind?: string; willId?: string };
+  if (opened.kind !== "qwill-founder" || opened.willId !== will.packet.id) {
+    throw new Error("That password does not open this will.");
+  }
+  const account = await connectQorex();
+  if (!evmProvider) throw new Error("Connect QoreX first.");
+  const message = toHex(utf8(`QWILL unlock\nwill=${will.packet.id}`));
+  await evmProvider.request({ method: "personal_sign", params: [message, account] });
+}
+
 export async function connectQorex(): Promise<Hex> {
   const found = await discoverQorex();
   if (!found) {
-    throw new Error("QoreX is not in this browser. Install it, then open QWILL where the extension can see the page. The preview inside Grok cannot.");
+    throw new Error("QoreX is not in this browser. Install it, then open QWILL where the extension can see the page.");
   }
   evmProvider = found;
   try {

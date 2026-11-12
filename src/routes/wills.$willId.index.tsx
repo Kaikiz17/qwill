@@ -2,8 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ChainRecord } from "@/components/chain-record";
 import { Ceremony } from "@/components/ceremony";
-import { Button, LinkButton, Notice, Pulse, VerdictCard } from "@/components/qwill-ui";
-import { cancelOnChain, checkInOnChain, connectQorex, explainChainError, loadRegistry } from "@/lib/qwill/chain";
+import { Button, LinkButton, Notice, Pulse, VerdictCard, fieldClass } from "@/components/qwill-ui";
+import { cancelOnChain, checkInOnChain, connectQorex, explainChainError, loadRegistry, proveAccess } from "@/lib/qwill/chain";
 import { copyText, downloadJson, formatRemain, formatWhen } from "@/lib/qwill/format";
 import {
   INTERVALS,
@@ -54,6 +54,9 @@ function WillView({ will }: { will: StoredWill }) {
   const [readError, setReadError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [armRemove, setArmRemove] = useState(false);
+  const [unlocked, setUnlocked] = useState(false);
+  const [gatePassword, setGatePassword] = useState("");
+  const [gateError, setGateError] = useState<string | null>(null);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -98,6 +101,22 @@ function WillView({ will }: { will: StoredWill }) {
         title: "Not signed",
         detail: explainChainError(err),
       });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unlock() {
+    setBusy(true);
+    setGateError(null);
+    try {
+      const registry = will.registry ? (will.registry as `0x${string}`) : loadRegistry();
+      if (!registry) throw new Error("This will is not on the chain yet.");
+      await proveAccess(will, gatePassword, registry);
+      setUnlocked(true);
+      setGatePassword("");
+    } catch (err) {
+      setGateError(explainChainError(err));
     } finally {
       setBusy(false);
     }
@@ -182,7 +201,7 @@ function WillView({ will }: { will: StoredWill }) {
           {will.packet.heirs.map((heir) => (
             <li key={heir.id} className="flex items-center justify-between gap-3 py-3">
               <span className="text-ivory">{heir.name}</span>
-              {keys?.some((key) => key.heirId === heir.id) ? (
+              {unlocked && keys?.some((key) => key.heirId === heir.id) ? (
                 <span className="flex gap-2">
                   <Button
                     variant="ghost"
@@ -212,7 +231,7 @@ function WillView({ will }: { will: StoredWill }) {
                   </Button>
                 </span>
               ) : (
-                <span className="text-sm text-muted">Key not on this device</span>
+                <span className="text-sm text-muted">{unlocked ? "Key not on this device" : "Locked"}</span>
               )}
             </li>
           ))}
@@ -225,15 +244,41 @@ function WillView({ will }: { will: StoredWill }) {
       <section className="mt-10">
         <h2 className="font-display text-2xl text-ivory">Letter</h2>
         <div className="mt-4">
-          <Button variant="quiet" onClick={() => void read()}>
-            {plain ? "Hide the letter" : "Read what you sealed"}
-          </Button>
+          {unlocked ? (
+            <Button variant="quiet" onClick={() => void read()}>
+              {plain ? "Hide the letter" : "Read what you sealed"}
+            </Button>
+          ) : (
+            <form
+              className="max-w-xl space-y-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void unlock();
+              }}
+            >
+              <p className="text-sm leading-relaxed text-muted">
+                The letter and the heir keys stay hidden. Enter the password, then sign with QoreX. Closing the page locks them again.
+              </p>
+              <input
+                className={fieldClass}
+                type="password"
+                value={gatePassword}
+                autoComplete="current-password"
+                placeholder="Password"
+                onChange={(event) => setGatePassword(event.target.value)}
+              />
+              <Button type="submit" disabled={busy || gatePassword.trim().length < 8}>
+                {busy ? "Waiting on QoreX…" : "Sign and unlock"}
+              </Button>
+              {gateError ? <Notice>{gateError}</Notice> : null}
+            </form>
+          )}
           {readError ? (
             <div className="mt-3">
               <Notice>{readError}</Notice>
             </div>
           ) : null}
-          {plain ? (
+          {unlocked && plain ? (
             <article className="mt-4 rounded-lg border border-line bg-ink-2 p-5">
               <p className="whitespace-pre-wrap font-display text-xl leading-relaxed text-ivory">{plain.letter}</p>
               <p className="mt-6 text-sm text-muted">Secret</p>
@@ -243,14 +288,14 @@ function WillView({ will }: { will: StoredWill }) {
         </div>
       </section>
 
-      <ChainRecord will={will} keys={keys ?? []} />
+      <ChainRecord will={will} keys={unlocked ? (keys ?? []) : []} />
 
       <details className="mt-10">
         <summary className="text-sm text-muted">Heir keys, backups, and the stolen-key check</summary>
         <section className="mt-6">
           <h2 className="font-display text-2xl text-ivory">Opening</h2>
           <div className="mt-4">
-            <Ceremony packet={will.packet} now={now} keys={keys ?? []} />
+            <Ceremony packet={will.packet} now={now} keys={unlocked ? (keys ?? []) : []} />
           </div>
         </section>
 
@@ -272,15 +317,21 @@ function WillView({ will }: { will: StoredWill }) {
         <section className="mt-10">
           <h2 className="font-display text-2xl text-ivory">Files</h2>
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <Button variant="quiet" onClick={() => downloadJson(packetFileName(will.packet.title), will.packet)}>
-              Download sealed will
-            </Button>
-            <Button variant="quiet" onClick={() => downloadJson("founder.qwill-key.json", will.founder)}>
-              Download founder key
-            </Button>
-            <LinkButton to="/wills/$willId/rehearse" params={{ willId: will.packet.id }} variant="quiet">
-              Rehearse
-            </LinkButton>
+            {unlocked ? (
+              <>
+                <Button variant="quiet" onClick={() => downloadJson(packetFileName(will.packet.title), will.packet)}>
+                  Download sealed will
+                </Button>
+                <Button variant="quiet" onClick={() => downloadJson("founder.qwill-key.json", will.founder)}>
+                  Download founder key
+                </Button>
+                <LinkButton to="/wills/$willId/rehearse" params={{ willId: will.packet.id }} variant="quiet">
+                  Rehearse
+                </LinkButton>
+              </>
+            ) : (
+              <p className="text-sm text-muted">Sign and unlock before downloading a key.</p>
+            )}
           </div>
         </section>
 
