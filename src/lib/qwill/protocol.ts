@@ -84,6 +84,7 @@ export type StoredWill = {
   claimKeys: ClaimKeyFile[] | null;
   notes: { at: number; text: string }[];
   registry?: string;
+  sealKey?: string;
 };
 
 export type WillStatus = "alive" | "claimable" | "revoked";

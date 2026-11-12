@@ -1,16 +1,14 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ChainRecord } from "@/components/chain-record";
-import { Ceremony } from "@/components/ceremony";
 import { Button, LinkButton, Notice, Pulse, VerdictCard, fieldClass } from "@/components/qwill-ui";
-import { cancelOnChain, checkInOnChain, connectQorex, explainChainError, loadRegistry, proveAccess } from "@/lib/qwill/chain";
+import { cancelOnChain, checkInOnChain, connectQorex, explainChainError, loadRegistry, proveAccess, sealedLine } from "@/lib/qwill/chain";
 import { copyText, downloadJson, formatRemain, formatWhen } from "@/lib/qwill/format";
 import {
   INTERVALS,
   cancelWill,
   checkIn,
   deadline,
-  packetFileName,
   readAsFounder,
   statusLabel,
   willStatus,
@@ -76,12 +74,6 @@ function WillView({ will }: { will: StoredWill }) {
   const interval =
     INTERVALS.find((item) => item.ms === will.packet.intervalMs)?.label ?? formatRemain(will.packet.intervalMs);
 
-  async function showStolen(action: "beat" | "cancel") {
-    const result = action === "beat" ? await checkIn(will, Date.now(), "classical") : await cancelWill(will, Date.now(), "classical");
-    upsertWill(result.will);
-    setVerdict(result.verdict);
-  }
-
   async function run(action: "beat" | "cancel") {
     setBusy(true);
     setVerdict(null);
@@ -124,7 +116,7 @@ function WillView({ will }: { will: StoredWill }) {
   }
 
   async function shareJson(id: string, value: unknown) {
-    const text = JSON.stringify(value, null, 2);
+    const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
     try {
       await copyText(text);
       setCopyFallback(null);
@@ -257,7 +249,10 @@ function WillView({ will }: { will: StoredWill }) {
               <Button variant="quiet" onClick={() => void read()}>
                 {plain ? "Hide the letter" : "Read what you sealed"}
               </Button>
-              <Button variant="quiet" onClick={() => void shareJson("packet", will.packet)}>
+              <Button
+                variant="quiet"
+                onClick={() => void shareJson("packet", sealedLine(will.registry ?? loadRegistry() ?? "", will.packet.id, will.sealKey))}
+              >
                 {copied === "packet" ? "Copied" : "Copy sealed will"}
               </Button>
             </div>
@@ -307,62 +302,25 @@ function WillView({ will }: { will: StoredWill }) {
       <ChainRecord will={will} keys={unlocked ? (keys ?? []) : []} />
 
       <details className="mt-10">
-        <summary className="text-sm text-muted">Heir keys, backups, and the stolen-key check</summary>
+        <summary className="text-sm text-muted">Founder key and record</summary>
         <section className="mt-6">
-          <h2 className="font-display text-2xl text-ivory">Opening</h2>
-          <div className="mt-4">
-            <Ceremony packet={will.packet} now={now} keys={unlocked ? (keys ?? []) : []} />
-          </div>
-        </section>
-
-        <section className="mt-10">
-          <h2 className="font-display text-2xl text-ivory">If a normal key is stolen</h2>
-          <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
-            An ordinary signature can be real and still do nothing. The deadline does not move.
-          </p>
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <Button variant="quiet" disabled={busy || status === "revoked"} onClick={() => void showStolen("beat")}>
-              Stolen key checks in
-            </Button>
-            <Button variant="quiet" disabled={busy || status === "revoked"} onClick={() => void showStolen("cancel")}>
-              Stolen key cancels
-            </Button>
-          </div>
-        </section>
-
-        <section className="mt-10">
-          <h2 className="font-display text-2xl text-ivory">Files</h2>
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+          <div className="flex flex-col gap-2 sm:flex-row">
             {unlocked ? (
               <>
-                <Button variant="quiet" onClick={() => void shareJson("packet", will.packet)}>
-                  {copied === "packet" ? "Copied" : "Copy sealed will"}
-                </Button>
-                <Button variant="quiet" onClick={() => downloadJson(packetFileName(will.packet.title), will.packet)}>
-                  Download sealed will
-                </Button>
                 <Button variant="quiet" onClick={() => void shareJson("founder", will.founder)}>
                   {copied === "founder" ? "Copied" : "Copy founder key"}
                 </Button>
                 <Button variant="quiet" onClick={() => downloadJson("founder.qwill-key.json", will.founder)}>
                   Download founder key
                 </Button>
-                <LinkButton to="/wills/$willId/rehearse" params={{ willId: will.packet.id }} variant="quiet">
-                  Rehearse
-                </LinkButton>
               </>
             ) : (
               <p className="text-sm text-muted">Sign and unlock before copying a key.</p>
             )}
           </div>
-          {copyFallback ? (
-            <textarea className={`${fieldClass} mt-4`} rows={6} readOnly value={copyFallback} onFocus={(event) => event.target.select()} />
-          ) : null}
         </section>
-
-        <section className="mt-10">
-          <h2 className="font-display text-2xl text-ivory">Record</h2>
-          <ul className="mt-4 space-y-2 text-sm text-muted">
+        <section className="mt-8">
+          <ul className="space-y-2 text-sm text-muted">
             <li>Sealed {formatWhen(will.packet.createdAt)}</li>
             {will.packet.beats
               .filter((beat) => beat.at !== will.packet.createdAt)

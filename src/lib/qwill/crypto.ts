@@ -88,6 +88,27 @@ export async function decrypt(key: Uint8Array, box: Box): Promise<Uint8Array> {
   return new Uint8Array(plain);
 }
 
+export async function sealBox(key: Uint8Array, plain: Uint8Array): Promise<Uint8Array> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cryptoKey = await crypto.subtle.importKey("raw", exact(key), "AES-GCM", false, ["encrypt"]);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: exact(iv) }, cryptoKey, exact(plain)));
+  const out = new Uint8Array(12 + ct.length);
+  out.set(iv, 0);
+  out.set(ct, 12);
+  return out;
+}
+
+export async function openBox(key: Uint8Array, blob: Uint8Array): Promise<Uint8Array> {
+  if (key.length !== 32 || blob.length < 13) throw new Error("That sealed will could not be opened.");
+  const cryptoKey = await crypto.subtle.importKey("raw", exact(key), "AES-GCM", false, ["decrypt"]);
+  try {
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: exact(blob.slice(0, 12)) }, cryptoKey, exact(blob.slice(12)));
+    return new Uint8Array(plain);
+  } catch {
+    throw new Error("That sealed will could not be opened.");
+  }
+}
+
 export async function lockWithPassword(password: string, plain: Uint8Array): Promise<Uint8Array> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));

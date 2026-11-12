@@ -75,11 +75,11 @@ function WriteForm() {
         now: Date.now(),
       });
       const registry = await ensureRegistry(account);
-      await sealOnChain(will, account, registry, password.trim());
+      const sealed = await sealOnChain(will, account, registry, password.trim());
       const recorded = await readWill(registry, will.packet.id);
       if (!recorded.exists) throw new Error("The chain did not keep this will. It was not created.");
       holdClaimKeys(will.packet.id, claimKeys);
-      upsertWill({ ...will, registry });
+      upsertWill({ ...will, registry, sealKey: sealed.sealKey });
       void navigate({ to: "/wills/$willId", params: { willId: will.packet.id } });
     } catch (err) {
       setError(explainChainError(err));
@@ -95,8 +95,7 @@ function WriteForm() {
         </LinkButton>
         <h1 className="mt-4 font-display text-4xl text-ivory">Write a will</h1>
         <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
-          QoreX signs it, and the locked letter goes on the chain as soon as you create it. It does not sit only on this
-          phone. Heirs still need the keys you give them, and they need each other.
+          QoreX records it on the chain when you create it. The chain cannot read the name or the letter. You get one short sealed will to give out.
         </p>
         <Notice>
           Before you create it, open the EVM window in the QoreX app. Set the spending cap to 20 QOR and allow 20

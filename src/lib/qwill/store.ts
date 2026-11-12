@@ -7,7 +7,7 @@ export type Drill = {
   virtualNow: number;
 };
 
-export type LockedWill = { packet: SealedPacket; vault: string };
+export type LockedWill = { id: string; vault: string; packet?: SealedPacket; letter?: string };
 
 type State = {
   wills: StoredWill[];
@@ -40,7 +40,7 @@ export const useWills = create<State>()(
             wills: exists
               ? state.wills.map((item) => (item.packet.id === will.packet.id ? will : item))
               : [will, ...state.wills],
-            locked: (state.locked ?? []).filter((item) => item.packet.id !== will.packet.id),
+            locked: (state.locked ?? []).filter((item) => (item.id || item.packet?.id) !== will.packet.id),
           };
         }),
       rememberLocked: (items) =>
@@ -48,12 +48,12 @@ export const useWills = create<State>()(
           const locked = state.locked ?? [];
           const known = new Set([
             ...state.wills.map((item) => item.packet.id),
-            ...locked.map((item) => item.packet.id),
+            ...locked.map((item) => item.id || item.packet?.id),
           ]);
-          const fresh = items.filter((item) => !known.has(item.packet.id));
+          const fresh = items.filter((item) => !known.has(item.id || item.packet?.id || ""));
           return fresh.length === 0 ? state : { locked: [...fresh, ...locked] };
         }),
-      dropLocked: (id) => set((state) => ({ locked: (state.locked ?? []).filter((item) => item.packet.id !== id) })),
+      dropLocked: (id) => set((state) => ({ locked: (state.locked ?? []).filter((item) => (item.id || item.packet?.id) !== id) })),
       removeWill: (id) =>
         set((state) => {
           const drills = { ...state.drills };

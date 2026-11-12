@@ -5,9 +5,9 @@ import { RestoreForm } from "@/components/restore-form";
 import { Shell } from "@/components/shell";
 import { b64ToBytes, fromUtf8 } from "@/lib/qwill/bytes";
 import { connectQorex, explainChainError, loadRegistry, loadWills, saveRegistry } from "@/lib/qwill/chain";
-import { openWithPassword } from "@/lib/qwill/crypto";
+import { openBox, openWithPassword } from "@/lib/qwill/crypto";
 import { formatRemain, formatWhen } from "@/lib/qwill/format";
-import { deadline, statusLabel, willStatus, type FounderKeyFile } from "@/lib/qwill/protocol";
+import { deadline, statusLabel, willStatus, type FounderKeyFile, type SealedPacket } from "@/lib/qwill/protocol";
 import { useWills } from "@/lib/qwill/store";
 
 export const Route = createFileRoute("/")({
@@ -37,8 +37,8 @@ function Empty() {
         A will for what they will need later.
       </h1>
       <p className="mt-5 text-base leading-relaxed text-muted">
-        Write a letter and a secret. QoreX records the locked letter on the chain when you create it. If you go quiet,
-        your heirs open it together. A stolen ordinary key cannot check in, cancel it, or take a share.
+        Write a letter and a secret. QoreX records it on the chain, locked, so the name is not readable there. If you go
+        quiet, your heirs open it together with the sealed will and their keys.
       </p>
       <div className="mt-8">
         <LinkButton to="/write">Write a will</LinkButton>
@@ -127,17 +127,35 @@ function WalletLoad() {
   }
 
   async function unlock(id: string) {
-    const item = locked.find((entry) => entry.packet.id === id);
+    const item = locked.find((entry) => (entry.id || entry.packet?.id) === id);
     if (!item) return;
     setBusy(true);
     setError(null);
     try {
-      const founder = JSON.parse(fromUtf8(await openWithPassword(password, b64ToBytes(item.vault)))) as FounderKeyFile;
-      if (founder.kind !== "qwill-founder" || founder.willId !== item.packet.id) {
+      const opened = JSON.parse(fromUtf8(await openWithPassword(password, b64ToBytes(item.vault)))) as FounderKeyFile & {
+        sealKey?: string;
+      };
+      const willId = item.id || item.packet?.id;
+      if (opened.kind !== "qwill-founder" || opened.willId !== willId) {
         throw new Error("That password does not open this will.");
       }
+      let packet = item.packet;
+      if (!packet) {
+        if (!item.letter || !opened.sealKey) throw new Error("That password does not open this will.");
+        packet = JSON.parse(fromUtf8(await openBox(b64ToBytes(opened.sealKey), b64ToBytes(item.letter)))) as SealedPacket;
+      }
+      if (packet.kind !== "qwill" || packet.id !== willId) throw new Error("That password does not open this will.");
       const saved = loadRegistry() ?? registry.trim();
-      upsertWill({ packet: item.packet, founder, founderRead: null, claimKeys: null, notes: [], registry: saved || undefined });
+      const { sealKey, ...founder } = opened;
+      upsertWill({
+        packet,
+        founder,
+        founderRead: null,
+        claimKeys: null,
+        notes: [],
+        registry: saved || undefined,
+        sealKey,
+      });
       setPassword("");
       setNote(null);
     } catch (err) {
@@ -166,8 +184,8 @@ function WalletLoad() {
           {busy ? "Working…" : "Connect QoreX and load"}
         </Button>
         {locked.map((item) => (
-          <div key={item.packet.id} className="mt-2 flex flex-col gap-2">
-            <p className="text-sm text-ivory">{item.packet.title}</p>
+          <div key={item.id || item.packet?.id} className="mt-2 flex flex-col gap-2">
+            <p className="text-sm text-ivory">{item.packet?.title ?? "Saved will"}</p>
             <input
               className={fieldClass}
               type="password"
@@ -175,7 +193,7 @@ function WalletLoad() {
               placeholder="Password"
               onChange={(event) => setPassword(event.target.value)}
             />
-            <Button variant="quiet" disabled={busy || password.length < 8} onClick={() => void unlock(item.packet.id)}>
+            <Button variant="quiet" disabled={busy || password.length < 8} onClick={() => void unlock(item.id || item.packet?.id || "")}>
               Open with password
             </Button>
           </div>

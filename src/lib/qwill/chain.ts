@@ -12,7 +12,7 @@ import {
 import { defineChain } from "viem";
 import { b64ToBytes, bytesToB64, fromUtf8, utf8 } from "./bytes";
 import { beatMessage, claimMessage, sealMessage, vetoMessage } from "./chain-messages.mjs";
-import { dsaPublic, lockWithPassword, openWithPassword, signDsa } from "./crypto";
+import { dsaPublic, lockWithPassword, openBox, openWithPassword, sealBox, signDsa } from "./crypto";
 import type { ClaimKeyFile, SealedPacket, StoredWill } from "./protocol";
 import { registryAbi, registryBytecode } from "./registry-artifact";
 import { encodeOpenEvmWindow } from "./window-bytes.mjs";
@@ -272,13 +272,20 @@ export async function deployRegistry(account: Hex): Promise<Hex> {
   return saveRegistry(receipt.contractAddress);
 }
 
-export async function sealOnChain(will: StoredWill, account: Hex, registry: Hex, password: string): Promise<Hex> {
+export async function sealOnChain(
+  will: StoredWill,
+  account: Hex,
+  registry: Hex,
+  password: string,
+): Promise<{ hash: Hex; sealKey: string }> {
   if (password.trim().length < 8) throw new Error("Use a password of at least 8 characters. You will need it on a new phone.");
   const founderKey = b64ToBytes(will.packet.founder.dsa);
   const heirs = will.packet.heirs.map((heir) => ({ id: heir.id, key: b64ToBytes(heir.dsa) }));
   const recordedAt = Date.now();
-  const letter = utf8(JSON.stringify(will.packet));
-  const vault = await lockWithPassword(password.trim(), utf8(JSON.stringify(will.founder)));
+  const sealKeyBytes = crypto.getRandomValues(new Uint8Array(32));
+  const sealKey = bytesToB64(sealKeyBytes);
+  const letter = await sealBox(sealKeyBytes, utf8(JSON.stringify(will.packet)));
+  const vault = await lockWithPassword(password.trim(), utf8(JSON.stringify({ ...will.founder, sealKey })));
   const letterPieces = splitPieces(letter);
   const vaultPieces = splitPieces(vault);
   const letterParts = letterPieces.map((piece) => keccak256(piece));
@@ -313,86 +320,59 @@ export async function sealOnChain(will: StoredWill, account: Hex, registry: Hex,
   const hash = await send(account, registry, data, sealGas(letter, vault));
   const receipt = await client.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") throw new Error("The chain refused the will. It was not created.");
-  return hash;
+  return { hash, sealKey };
 }
 
-export async function loadWills(account: Hex, registry: Hex): Promise<{ packet: SealedPacket; vault: string }[]> {
+export type RemoteWill = { id: string; vault: string; packet?: SealedPacket; letter?: string };
+
+export async function loadWills(account: Hex, registry: Hex): Promise<RemoteWill[]> {
   const ids = (await client.readContract({
     address: registry,
     abi: registryAbi,
     functionName: "willsOf",
     args: [account],
   })) as string[];
-  const found: { packet: SealedPacket; vault: string }[] = [];
+  const found: RemoteWill[] = [];
   for (const id of ids) {
     const letter = await readLocked(registry, id, false);
     const vault = await readLocked(registry, id, true);
     if (letter.length === 0 || vault.length === 0) continue;
-    const packet = JSON.parse(fromUtf8(letter)) as SealedPacket;
-    if (packet?.kind !== "qwill" || packet.id !== id) continue;
-    found.push({ packet, vault: bytesToB64(vault) });
+    const packet = packetFromLetter(letter, id);
+    found.push(packet ? { id, vault: bytesToB64(vault), packet } : { id, vault: bytesToB64(vault), letter: bytesToB64(letter) });
   }
   return found;
 }
 
-export async function loadPacket(registry: Hex, willId: string): Promise<SealedPacket> {
+export function sealedLine(registry: string, willId: string, sealKey?: string): string {
+  return sealKey ? `qwill1:${registry}:${willId}:${sealKey}` : `qwill1:${registry}:${willId}`;
+}
+
+export async function openSealedLine(line: string): Promise<SealedPacket> {
+  const parts = line.trim().split(":");
+  if (parts[0] !== "qwill1" || parts.length < 3) throw new Error("Paste the sealed will.");
+  const registry = getAddress(parts[1] ?? "");
+  const willId = parts[2] ?? "";
+  const sealKey = parts[3];
   const letter = await readLocked(registry, willId, false);
-  if (letter.length === 0) throw new Error("That contract has no letter for this will.");
-  const packet = JSON.parse(fromUtf8(letter)) as SealedPacket;
-  if (packet?.kind !== "qwill" || packet.id !== willId) throw new Error("The letter on the chain could not be read.");
+  if (letter.length === 0) throw new Error("That sealed will is not on the contract.");
+  const open = packetFromLetter(letter, willId);
+  if (open) return open;
+  if (!sealKey) throw new Error("Paste the whole sealed will.");
+  const plain = await openBox(b64ToBytes(sealKey), letter);
+  const packet = JSON.parse(fromUtf8(plain)) as SealedPacket;
+  if (packet?.kind !== "qwill" || packet.id !== willId) throw new Error("That sealed will could not be opened.");
   return packet;
 }
 
-const lockedEvent = {
-  type: "event",
-  name: "Locked",
-  inputs: [
-    { name: "willKey", type: "bytes32", indexed: true },
-    { name: "vault", type: "bool", indexed: true },
-    { name: "index", type: "uint16", indexed: false },
-    { name: "data", type: "bytes", indexed: false },
-  ],
-} as const;
-
-export async function listPackets(registry: Hex): Promise<SealedPacket[]> {
-  const latest = await client.getBlockNumber();
-  const span = 9_000n;
-  const groups = new Map<string, { index: number; data: Hex }[]>();
-  for (let step = 0n; step < 6n; step += 1n) {
-    const to = latest - step * span;
-    if (to <= 0n) break;
-    const from = to > span ? to - span + 1n : 0n;
-    let logs: Awaited<ReturnType<typeof client.getLogs<typeof lockedEvent>>> = [];
-    try {
-      logs = await client.getLogs({
-        address: registry,
-        event: lockedEvent,
-        args: { vault: false },
-        fromBlock: from,
-        toBlock: to,
-      });
-    } catch {
-      continue;
-    }
-    for (const log of logs) {
-      const key = log.args.willKey;
-      if (!key || !log.args.data) continue;
-      const list = groups.get(key) ?? [];
-      list.push({ index: Number(log.args.index ?? 0), data: log.args.data });
-      groups.set(key, list);
-    }
+function packetFromLetter(letter: Uint8Array, willId: string): SealedPacket | null {
+  const text = fromUtf8(letter);
+  if (!text.startsWith("{")) return null;
+  try {
+    const packet = JSON.parse(text) as SealedPacket;
+    return packet?.kind === "qwill" && packet.id === willId ? packet : null;
+  } catch {
+    return null;
   }
-  const packets: SealedPacket[] = [];
-  for (const parts of groups.values()) {
-    parts.sort((a, b) => a.index - b.index);
-    try {
-      const packet = JSON.parse(fromUtf8(concatBytes(parts.map((part) => hexToBytes(part.data))))) as SealedPacket;
-      if (packet?.kind === "qwill" && typeof packet.id === "string" && typeof packet.title === "string") packets.push(packet);
-    } catch {
-      /* a piece from another contract layout */
-    }
-  }
-  return packets;
 }
 
 export async function checkInOnChain(will: StoredWill, account: Hex, registry: Hex, at = Date.now()): Promise<Hex> {

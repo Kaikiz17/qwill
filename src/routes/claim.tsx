@@ -3,11 +3,9 @@ import { useState } from "react";
 import { Ceremony } from "@/components/ceremony";
 import { Button, Notice, fieldClass } from "@/components/qwill-ui";
 import { Shell } from "@/components/shell";
-import { listPackets } from "@/lib/qwill/chain";
+import { openSealedLine } from "@/lib/qwill/chain";
 import { formatWhen } from "@/lib/qwill/format";
 import { deadline, statusLabel, willStatus, type SealedPacket } from "@/lib/qwill/protocol";
-import { useWills } from "@/lib/qwill/store";
-import { getAddress, type Hex } from "viem";
 
 export const Route = createFileRoute("/claim")({
   component: ClaimPage,
@@ -22,36 +20,20 @@ function ClaimPage() {
 }
 
 function Claim() {
-  const onThisPhone = useWills((state) => state.wills);
+  const [line, setLine] = useState("");
   const [packet, setPacket] = useState<SealedPacket | null>(null);
-  const [found, setFound] = useState<SealedPacket[]>([]);
-  const [registry, setRegistry] = useState("");
-  const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [now] = useState(() => Date.now());
   const [loading, setLoading] = useState(false);
 
-  const local = onThisPhone.map((will) => will.packet);
-  const choices = [...new Map([...local, ...found].map((item) => [item.id, item])).values()].filter((item) =>
-    name.trim() ? item.title.toLowerCase().includes(name.trim().toLowerCase()) : true,
-  );
-
-  async function show() {
+  async function open() {
     setLoading(true);
     setError(null);
     setPacket(null);
     try {
-      const address = getAddress(registry.trim());
-      const packets = await listPackets(address as Hex);
-      const matched = name.trim()
-        ? packets.filter((item) => item.title.toLowerCase().includes(name.trim().toLowerCase()))
-        : packets;
-      if (matched.length === 0) throw new Error(packets.length === 0 ? "No will is on that contract." : "No will has that name.");
-      setFound(matched);
-      if (matched.length === 1) setPacket(matched[0]);
+      setPacket(await openSealedLine(line));
     } catch (err) {
-      setFound([]);
-      setError(err instanceof Error ? err.message : "The contract could not be read.");
+      setError(err instanceof Error ? err.message : "That sealed will could not be opened.");
     } finally {
       setLoading(false);
     }
@@ -63,45 +45,30 @@ function Claim() {
     <div>
       <h1 className="font-display text-4xl text-ivory">Open a will</h1>
       <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
-        Any browser. No wallet. Enter the contract, then the heirs add their keys on this page. The letter opens here.
-        Nothing is sent to the chain.
+        Paste the sealed will. No wallet. The letter opens on this page after the check-ins stop, when the heirs add their keys.
       </p>
       <form
-        className="mt-6 space-y-2"
+        className="mt-6 space-y-3"
         onSubmit={(event) => {
           event.preventDefault();
-          void show();
+          void open();
         }}
       >
-        <input
+        <textarea
           className={fieldClass}
-          value={registry}
-          placeholder="Contract address"
+          rows={3}
+          value={line}
+          placeholder="qwill1:..."
           spellCheck={false}
-          onChange={(event) => setRegistry(event.target.value)}
+          onChange={(event) => setLine(event.target.value)}
         />
-        <input
-          className={fieldClass}
-          value={name}
-          placeholder="Name of the will"
-          onChange={(event) => setName(event.target.value)}
-        />
-        <Button type="submit" disabled={loading || registry.trim().length === 0}>
-          {loading ? "Looking…" : "Show the will"}
+        <Button type="submit" disabled={loading || line.trim().length === 0}>
+          {loading ? "Opening…" : "Open"}
         </Button>
       </form>
       {error ? (
         <div className="mt-4">
           <Notice>{error}</Notice>
-        </div>
-      ) : null}
-      {choices.length > 1 ? (
-        <div className="mt-6 flex flex-col gap-2">
-          {choices.map((item) => (
-            <Button key={item.id} variant="quiet" onClick={() => { setPacket(item); setError(null); }}>
-              {item.title}
-            </Button>
-          ))}
         </div>
       ) : null}
       {packet && status ? (
