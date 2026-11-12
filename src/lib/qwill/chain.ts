@@ -13,7 +13,7 @@ import { defineChain } from "viem";
 import { b64ToBytes, bytesToB64, fromUtf8, utf8 } from "./bytes";
 import { beatMessage, claimMessage, sealMessage, vetoMessage } from "./chain-messages.mjs";
 import { dsaPublic, lockWithPassword, openBox, openWithPassword, sealBox, signDsa } from "./crypto";
-import type { ClaimKeyFile, SealedPacket, StoredWill } from "./protocol";
+import type { ClaimKeyFile, FounderKeyFile, SealedPacket, StoredWill } from "./protocol";
 import { registryAbi, registryBytecode } from "./registry-artifact";
 import { encodeOpenEvmWindow } from "./window-bytes.mjs";
 
@@ -324,6 +324,31 @@ export async function sealOnChain(
 }
 
 export type RemoteWill = { id: string; vault: string; packet?: SealedPacket; letter?: string };
+
+export async function openWillsWithPassword(account: Hex, registry: Hex, password: string): Promise<StoredWill[]> {
+  const found = await loadWills(account, registry);
+  const opened: StoredWill[] = [];
+  for (const item of found) {
+    try {
+      const parsed = JSON.parse(fromUtf8(await openWithPassword(password, b64ToBytes(item.vault)))) as FounderKeyFile & {
+        sealKey?: string;
+      };
+      const willId = item.id || item.packet?.id;
+      if (parsed.kind !== "qwill-founder" || parsed.willId !== willId) continue;
+      let packet = item.packet;
+      if (!packet) {
+        if (!item.letter || !parsed.sealKey) continue;
+        packet = JSON.parse(fromUtf8(await openBox(b64ToBytes(parsed.sealKey), b64ToBytes(item.letter)))) as SealedPacket;
+      }
+      if (packet.kind !== "qwill" || packet.id !== willId) continue;
+      const { sealKey, ...founder } = parsed;
+      opened.push({ packet, founder, founderRead: null, claimKeys: null, notes: [], registry, sealKey });
+    } catch {
+      continue;
+    }
+  }
+  return opened;
+}
 
 export async function loadWills(account: Hex, registry: Hex): Promise<RemoteWill[]> {
   const ids = (await client.readContract({

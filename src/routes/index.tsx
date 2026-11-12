@@ -1,13 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Button, LinkButton, Pulse, fieldClass } from "@/components/qwill-ui";
-import { RestoreForm } from "@/components/restore-form";
 import { Shell } from "@/components/shell";
-import { b64ToBytes, fromUtf8 } from "@/lib/qwill/bytes";
-import { connectQorex, explainChainError, loadRegistry, loadWills, saveRegistry } from "@/lib/qwill/chain";
-import { openBox, openWithPassword } from "@/lib/qwill/crypto";
+import { connectQorex, explainChainError, loadRegistry, openWillsWithPassword, saveRegistry } from "@/lib/qwill/chain";
 import { formatRemain, formatWhen } from "@/lib/qwill/format";
-import { deadline, statusLabel, willStatus, type FounderKeyFile, type SealedPacket } from "@/lib/qwill/protocol";
+import { deadline, statusLabel, willStatus } from "@/lib/qwill/protocol";
 import { useWills } from "@/lib/qwill/store";
 
 export const Route = createFileRoute("/")({
@@ -46,7 +43,6 @@ function Empty() {
       <details className="mt-12">
         <summary className="text-sm text-muted">This phone is new</summary>
         <WalletLoad />
-        <RestoreForm />
       </details>
     </div>
   );
@@ -92,72 +88,35 @@ function List({ now }: { now: number }) {
       <details className="mt-10">
         <summary className="text-sm text-muted">Load a will onto this phone</summary>
         <WalletLoad />
-        <RestoreForm />
       </details>
     </div>
   );
 }
 
 function WalletLoad() {
-  const locked = useWills((state) => state.locked ?? []);
-  const rememberLocked = useWills((state) => state.rememberLocked);
+  const navigate = useNavigate();
   const upsertWill = useWills((state) => state.upsertWill);
   const [registry, setRegistry] = useState(() => loadRegistry() ?? "");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function connect() {
+  async function open() {
     setBusy(true);
     setError(null);
     try {
+      if (password.trim().length < 8) throw new Error("Enter the password.");
       const account = await connectQorex();
       const address = registry.trim() ? saveRegistry(registry.trim()) : loadRegistry();
-      if (!address) throw new Error("Paste the contract address first. The wallet does not remember it.");
+      if (!address) throw new Error("Paste the contract address first.");
       setRegistry(address);
-      const found = await loadWills(account, address);
-      rememberLocked(found);
-      setNote(found.length === 0 ? "This wallet has no letter on that contract." : "Letter found. Type the password.");
-    } catch (err) {
-      setError(explainChainError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function unlock(id: string) {
-    const item = locked.find((entry) => (entry.id || entry.packet?.id) === id);
-    if (!item) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const opened = JSON.parse(fromUtf8(await openWithPassword(password, b64ToBytes(item.vault)))) as FounderKeyFile & {
-        sealKey?: string;
-      };
-      const willId = item.id || item.packet?.id;
-      if (opened.kind !== "qwill-founder" || opened.willId !== willId) {
-        throw new Error("That password does not open this will.");
-      }
-      let packet = item.packet;
-      if (!packet) {
-        if (!item.letter || !opened.sealKey) throw new Error("That password does not open this will.");
-        packet = JSON.parse(fromUtf8(await openBox(b64ToBytes(opened.sealKey), b64ToBytes(item.letter)))) as SealedPacket;
-      }
-      if (packet.kind !== "qwill" || packet.id !== willId) throw new Error("That password does not open this will.");
-      const saved = loadRegistry() ?? registry.trim();
-      const { sealKey, ...founder } = opened;
-      upsertWill({
-        packet,
-        founder,
-        founderRead: null,
-        claimKeys: null,
-        notes: [],
-        registry: saved || undefined,
-        sealKey,
-      });
+      const opened = await openWillsWithPassword(account, address, password.trim());
+      if (opened.length === 0) throw new Error("That password does not open a will on this contract.");
+      for (const will of opened) upsertWill(will);
       setPassword("");
-      setNote(null);
+      if (opened.length === 1) {
+        void navigate({ to: "/wills/$willId", params: { willId: opened[0].packet.id } });
+      }
     } catch (err) {
       setError(explainChainError(err));
     } finally {
@@ -169,10 +128,15 @@ function WalletLoad() {
     <section className="mt-10 max-w-xl">
       <h2 className="font-display text-2xl text-ivory">Open a saved will</h2>
       <p className="mt-3 text-sm leading-relaxed text-muted">
-        Connect the same QoreX wallet. The locked letter comes back from the contract. The password opens it. Heir keys
-        are not in the wallet.
+        Connect the wallet and enter the password. If this wallet holds more than one will, the password opens the right one.
       </p>
-      <div className="mt-4 flex flex-col gap-2">
+      <form
+        className="mt-4 flex flex-col gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void open();
+        }}
+      >
         <input
           className={fieldClass}
           value={registry}
@@ -180,27 +144,19 @@ function WalletLoad() {
           spellCheck={false}
           onChange={(event) => setRegistry(event.target.value)}
         />
-        <Button disabled={busy} onClick={() => void connect()}>
-          {busy ? "Working…" : "Connect QoreX and load"}
+        <input
+          className={fieldClass}
+          type="password"
+          value={password}
+          autoComplete="current-password"
+          placeholder="Password"
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        <Button type="submit" disabled={busy || password.trim().length < 8}>
+          {busy ? "Opening…" : "Connect and open"}
         </Button>
-        {locked.map((item) => (
-          <div key={item.id || item.packet?.id} className="mt-2 flex flex-col gap-2">
-            <p className="text-sm text-ivory">{item.packet?.title ?? "Saved will"}</p>
-            <input
-              className={fieldClass}
-              type="password"
-              value={password}
-              placeholder="Password"
-              onChange={(event) => setPassword(event.target.value)}
-            />
-            <Button variant="quiet" disabled={busy || password.length < 8} onClick={() => void unlock(item.id || item.packet?.id || "")}>
-              Open with password
-            </Button>
-          </div>
-        ))}
-        {note ? <p className="text-sm text-muted">{note}</p> : null}
         {error ? <p className="text-sm text-muted">{error}</p> : null}
-      </div>
+      </form>
     </section>
   );
 }

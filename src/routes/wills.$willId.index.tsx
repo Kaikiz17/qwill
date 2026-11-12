@@ -33,7 +33,7 @@ function Missing() {
   return (
     <div>
       <h1 className="font-display text-4xl text-ivory">This will is not on this device.</h1>
-      <p className="mt-3 text-sm text-muted">Restore it with the sealed file and the founder key.</p>
+      <p className="mt-3 text-sm text-muted">On the desk, connect the wallet and enter the password.</p>
       <div className="mt-6">
         <LinkButton to="/">Back to the desk</LinkButton>
       </div>

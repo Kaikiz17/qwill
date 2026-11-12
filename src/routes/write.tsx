@@ -6,6 +6,7 @@ import {
   connectQorex,
   ensureRegistry,
   explainChainError,
+  openWillsWithPassword,
   readWill,
   sealOnChain,
 } from "@/lib/qwill/chain";
@@ -75,6 +76,8 @@ function WriteForm() {
         now: Date.now(),
       });
       const registry = await ensureRegistry(account);
+      const already = await openWillsWithPassword(account, registry, password.trim());
+      if (already.length > 0) throw new Error("This password already opens a will in this wallet. Choose another.");
       const sealed = await sealOnChain(will, account, registry, password.trim());
       const recorded = await readWill(registry, will.packet.id);
       if (!recorded.exists) throw new Error("The chain did not keep this will. It was not created.");
