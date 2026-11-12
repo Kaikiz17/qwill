@@ -96,7 +96,7 @@ export function Ceremony({
   return (
     <div className="space-y-4">
       <p className="text-sm leading-relaxed text-muted">
-        {shares.length} of {packet.threshold} shares in the room. One person is not enough.
+        {shares.length} of {packet.threshold} heirs on this phone. One person is not enough.
       </p>
       {keys.length > 0 ? (
         <div className="flex flex-col gap-2">
@@ -112,7 +112,7 @@ export function Ceremony({
           ))}
         </div>
       ) : (
-        <p className="text-sm text-muted">No heir keys are stored on this device. Paste one below.</p>
+        <p className="text-sm text-muted">Paste the key that heir was given.</p>
       )}
       <label className="block">
         <span className="mb-2 block text-sm text-ivory">Claim key</span>

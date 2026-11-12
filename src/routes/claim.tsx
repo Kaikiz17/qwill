@@ -45,10 +45,11 @@ function Claim() {
 
   return (
     <div>
-      <h1 className="font-display text-4xl text-ivory">Open a claim</h1>
+      <h1 className="font-display text-4xl text-ivory">Open a will</h1>
       <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
-        Load the sealed will, then add claim keys until enough heirs are in the room. Shares stay on this device. They
-        are not written back into the file.
+        This page is for the heirs, after the check-ins have stopped. Put in the sealed will. Then each heir adds their
+        own key on this phone. One key does nothing. When enough heirs are here, the letter opens. Their keys are not
+        saved into the will, and they leave when this page is closed.
       </p>
       <label className="mt-8 block">
         <span className="mb-2 flex items-center justify-between text-sm text-ivory">
