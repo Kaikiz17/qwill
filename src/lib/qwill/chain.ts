@@ -345,7 +345,8 @@ async function founderAction(
     args: [will.packet.id, BigInt(at), toHex(founderKey), toHex(signature)],
   });
   const hash = await send(account, registry, data, 3_000_000n);
-  await client.waitForTransactionReceipt({ hash });
+  const receipt = await client.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") throw new Error("The chain refused it. Nothing changed.");
   return hash;
 }
 
@@ -360,7 +361,8 @@ export async function claimOnChain(willId: string, claim: ClaimKeyFile, account:
     args: [willId, claim.heirId, BigInt(at), toHex(heirKey), toHex(signature)],
   });
   const hash = await send(account, registry, data, 3_000_000n);
-  await client.waitForTransactionReceipt({ hash });
+  const receipt = await client.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") throw new Error("The chain refused the claim. Nothing changed.");
   return hash;
 }
 
@@ -419,13 +421,24 @@ function sealGas(letter: Uint8Array, vault: Uint8Array): bigint {
 }
 
 async function readLocked(registry: Hex, willId: string, vault: boolean): Promise<Uint8Array> {
-  const block = (await client.readContract({
-    address: registry,
-    abi: registryAbi,
-    functionName: "blockOf",
-    args: [willId],
-  })) as bigint;
-  if (block === 0n) return new Uint8Array();
+  try {
+    const block = (await client.readContract({
+      address: registry,
+      abi: registryAbi,
+      functionName: "blockOf",
+      args: [willId],
+    })) as bigint;
+    if (block > 0n) {
+      const fromLogs = await readLogs(registry, willId, vault, block);
+      if (fromLogs.length > 0) return fromLogs;
+    }
+  } catch {
+    /* the contract already on chain keeps the letter in storage */
+  }
+  return readPieces(registry, willId, vault);
+}
+
+async function readLogs(registry: Hex, willId: string, vault: boolean, block: bigint): Promise<Uint8Array> {
   const logs = await client.getLogs({
     address: registry,
     event: {
@@ -448,6 +461,32 @@ async function readLocked(registry: Hex, willId: string, vault: boolean): Promis
     if (!log.args.data) continue;
     parts.push(hexToBytes(log.args.data));
   }
+  return concatBytes(parts);
+}
+
+async function readPieces(registry: Hex, willId: string, vault: boolean): Promise<Uint8Array> {
+  const count = Number(
+    await client.readContract({
+      address: registry,
+      abi: registryAbi,
+      functionName: vault ? "vaultCount" : "letterCount",
+      args: [willId],
+    }),
+  );
+  const parts: Uint8Array[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const piece = (await client.readContract({
+      address: registry,
+      abi: registryAbi,
+      functionName: "pieceOf",
+      args: [willId, vault, BigInt(index)],
+    })) as Hex;
+    parts.push(hexToBytes(piece));
+  }
+  return concatBytes(parts);
+}
+
+function concatBytes(parts: Uint8Array[]): Uint8Array {
   const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
   let offset = 0;
   for (const part of parts) {

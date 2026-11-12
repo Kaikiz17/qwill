@@ -60,6 +60,12 @@ function WillView({ will }: { will: StoredWill }) {
     return () => window.clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (will.registry) return;
+    const saved = loadRegistry();
+    if (saved) upsertWill({ ...will, registry: saved });
+  }, [will, upsertWill]);
+
   const status = willStatus(will.packet, now);
   const due = deadline(will.packet);
   const keys = will.claimKeys ?? peekClaimKeys(will.packet.id);

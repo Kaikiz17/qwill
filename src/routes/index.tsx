@@ -136,7 +136,8 @@ function WalletLoad() {
       if (founder.kind !== "qwill-founder" || founder.willId !== item.packet.id) {
         throw new Error("That password does not open this will.");
       }
-      upsertWill({ packet: item.packet, founder, founderRead: null, claimKeys: null, notes: [] });
+      const saved = loadRegistry() ?? registry.trim();
+      upsertWill({ packet: item.packet, founder, founderRead: null, claimKeys: null, notes: [], registry: saved || undefined });
       setPassword("");
       setNote(null);
     } catch (err) {
