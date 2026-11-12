@@ -263,7 +263,8 @@ export async function sealOnChain(will: StoredWill, account: Hex, registry: Hex,
     ],
   });
   const hash = await send(account, registry, data, sealGas(data, letter, vault));
-  await client.waitForTransactionReceipt({ hash });
+  const receipt = await client.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") throw new Error("The chain refused the will. It was not created.");
   return hash;
 }
 

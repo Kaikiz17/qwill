@@ -7,6 +7,7 @@ import {
   deployRegistry,
   explainChainError,
   loadRegistry,
+  readWill,
   sealOnChain,
 } from "@/lib/qwill/chain";
 import { INTERVALS, sealWill, type IntervalId } from "@/lib/qwill/protocol";
@@ -76,6 +77,8 @@ function WriteForm() {
       });
       const registry = loadRegistry() ?? (await deployRegistry(account));
       await sealOnChain(will, account, registry, password.trim());
+      const recorded = await readWill(registry, will.packet.id);
+      if (!recorded.exists) throw new Error("The chain did not keep this will. It was not created.");
       holdClaimKeys(will.packet.id, claimKeys);
       upsertWill(will);
       void navigate({ to: "/wills/$willId", params: { willId: will.packet.id } });
