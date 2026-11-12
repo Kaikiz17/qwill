@@ -45,7 +45,7 @@ function Claim() {
     <div>
       <h1 className="font-display text-4xl text-ivory">Open a will</h1>
       <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
-        Paste the sealed will. No wallet. The letter opens on this page after the check-ins stop, when the heirs add their keys.
+        Paste the short line from the will. It starts with qwill1. A key will not open it. No wallet. The letter opens here after the check-ins stop, when the heirs add their keys.
       </p>
       <form
         className="mt-6 space-y-3"

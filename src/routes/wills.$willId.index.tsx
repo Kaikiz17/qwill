@@ -242,20 +242,39 @@ function WillView({ will }: { will: StoredWill }) {
       </section>
 
       <section className="mt-10">
+        <h2 className="font-display text-2xl text-ivory">Sealed will</h2>
+        <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
+          This short line is what the heirs paste. It is not a key.
+        </p>
+        {will.registry || loadRegistry() ? (
+          <div className="mt-4 flex flex-col gap-2">
+            <input
+              className={fieldClass}
+              readOnly
+              value={sealedLine(will.registry ?? loadRegistry() ?? "", will.packet.id, will.sealKey)}
+              onFocus={(event) => event.target.select()}
+            />
+            <Button
+              variant="quiet"
+              onClick={() =>
+                void shareJson("packet", sealedLine(will.registry ?? loadRegistry() ?? "", will.packet.id, will.sealKey))
+              }
+            >
+              {copied === "packet" ? "Copied" : "Copy sealed will"}
+            </Button>
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-muted">This will is not on a contract yet.</p>
+        )}
+      </section>
+
+      <section className="mt-10">
         <h2 className="font-display text-2xl text-ivory">Letter</h2>
         <div className="mt-4">
           {unlocked ? (
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button variant="quiet" onClick={() => void read()}>
-                {plain ? "Hide the letter" : "Read what you sealed"}
-              </Button>
-              <Button
-                variant="quiet"
-                onClick={() => void shareJson("packet", sealedLine(will.registry ?? loadRegistry() ?? "", will.packet.id, will.sealKey))}
-              >
-                {copied === "packet" ? "Copied" : "Copy sealed will"}
-              </Button>
-            </div>
+            <Button variant="quiet" onClick={() => void read()}>
+              {plain ? "Hide the letter" : "Read what you sealed"}
+            </Button>
           ) : (
             <form
               className="max-w-xl space-y-3"
@@ -302,34 +321,16 @@ function WillView({ will }: { will: StoredWill }) {
       <ChainRecord will={will} keys={unlocked ? (keys ?? []) : []} />
 
       <details className="mt-10">
-        <summary className="text-sm text-muted">Founder key and record</summary>
-        <section className="mt-6">
-          <div className="flex flex-col gap-2 sm:flex-row">
-            {unlocked ? (
-              <>
-                <Button variant="quiet" onClick={() => void shareJson("founder", will.founder)}>
-                  {copied === "founder" ? "Copied" : "Copy founder key"}
-                </Button>
-                <Button variant="quiet" onClick={() => downloadJson("founder.qwill-key.json", will.founder)}>
-                  Download founder key
-                </Button>
-              </>
-            ) : (
-              <p className="text-sm text-muted">Sign and unlock before copying a key.</p>
-            )}
-          </div>
-        </section>
-        <section className="mt-8">
-          <ul className="space-y-2 text-sm text-muted">
-            <li>Sealed {formatWhen(will.packet.createdAt)}</li>
-            {will.packet.beats
-              .filter((beat) => beat.at !== will.packet.createdAt)
-              .map((beat) => (
-                <li key={beat.at}>Checked in {formatWhen(beat.at)}</li>
-              ))}
-            {will.packet.veto ? <li>Cancelled {formatWhen(will.packet.veto.at)}</li> : null}
-          </ul>
-        </section>
+        <summary className="text-sm text-muted">Record</summary>
+        <ul className="mt-4 space-y-2 text-sm text-muted">
+          <li>Sealed {formatWhen(will.packet.createdAt)}</li>
+          {will.packet.beats
+            .filter((beat) => beat.at !== will.packet.createdAt)
+            .map((beat) => (
+              <li key={beat.at}>Checked in {formatWhen(beat.at)}</li>
+            ))}
+          {will.packet.veto ? <li>Cancelled {formatWhen(will.packet.veto.at)}</li> : null}
+        </ul>
       </details>
 
       <section className="mt-12 border-t border-line pt-6">

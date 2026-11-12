@@ -349,7 +349,7 @@ export function sealedLine(registry: string, willId: string, sealKey?: string): 
 
 export async function openSealedLine(line: string): Promise<SealedPacket> {
   const parts = line.trim().split(":");
-  if (parts[0] !== "qwill1" || parts.length < 3) throw new Error("Paste the sealed will.");
+  if (parts[0] !== "qwill1" || parts.length < 3) throw new Error("That is not the sealed will. Copy the short line that starts with qwill1.");
   const registry = getAddress(parts[1] ?? "");
   const willId = parts[2] ?? "";
   const sealKey = parts[3];
