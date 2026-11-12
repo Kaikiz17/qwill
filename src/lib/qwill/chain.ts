@@ -378,7 +378,9 @@ function explainName(name: string): string {
 function sealGas(data: Hex, letter: Uint8Array, vault: Uint8Array): bigint {
   const calldata = BigInt((data.length - 2) / 2);
   const stored = BigInt(letter.length + vault.length);
-  return ((1_500_000n + stored * 700n + calldata * 16n) * 5n) / 4n;
+  const need = 2_000_000n + stored * 650n + calldata * 16n;
+  const cap = 29_000_000n;
+  return need > cap ? cap : need;
 }
 
 async function send(from: Hex, to: Hex | undefined, data: Hex, gas: bigint): Promise<Hex> {
