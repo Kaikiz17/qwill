@@ -343,6 +343,58 @@ export async function loadPacket(registry: Hex, willId: string): Promise<SealedP
   return packet;
 }
 
+const lockedEvent = {
+  type: "event",
+  name: "Locked",
+  inputs: [
+    { name: "willKey", type: "bytes32", indexed: true },
+    { name: "vault", type: "bool", indexed: true },
+    { name: "index", type: "uint16", indexed: false },
+    { name: "data", type: "bytes", indexed: false },
+  ],
+} as const;
+
+export async function listPackets(registry: Hex): Promise<SealedPacket[]> {
+  const latest = await client.getBlockNumber();
+  const span = 9_000n;
+  const groups = new Map<string, { index: number; data: Hex }[]>();
+  for (let step = 0n; step < 6n; step += 1n) {
+    const to = latest - step * span;
+    if (to <= 0n) break;
+    const from = to > span ? to - span + 1n : 0n;
+    let logs: Awaited<ReturnType<typeof client.getLogs<typeof lockedEvent>>> = [];
+    try {
+      logs = await client.getLogs({
+        address: registry,
+        event: lockedEvent,
+        args: { vault: false },
+        fromBlock: from,
+        toBlock: to,
+      });
+    } catch {
+      continue;
+    }
+    for (const log of logs) {
+      const key = log.args.willKey;
+      if (!key || !log.args.data) continue;
+      const list = groups.get(key) ?? [];
+      list.push({ index: Number(log.args.index ?? 0), data: log.args.data });
+      groups.set(key, list);
+    }
+  }
+  const packets: SealedPacket[] = [];
+  for (const parts of groups.values()) {
+    parts.sort((a, b) => a.index - b.index);
+    try {
+      const packet = JSON.parse(fromUtf8(concatBytes(parts.map((part) => hexToBytes(part.data))))) as SealedPacket;
+      if (packet?.kind === "qwill" && typeof packet.id === "string" && typeof packet.title === "string") packets.push(packet);
+    } catch {
+      /* a piece from another contract layout */
+    }
+  }
+  return packets;
+}
+
 export async function checkInOnChain(will: StoredWill, account: Hex, registry: Hex, at = Date.now()): Promise<Hex> {
   return founderAction(will, account, registry, "checkIn", at);
 }

@@ -88,7 +88,7 @@ export function Ceremony({
   }
 
   if (status === "alive") {
-    return <Notice>Heirs cannot open this while the check-ins are still on time.</Notice>;
+    return <Notice>The check-ins are still on time. The letter opens after that date.</Notice>;
   }
 
   const present = new Set(shares.map((share) => share.heirId));
