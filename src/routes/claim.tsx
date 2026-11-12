@@ -1,13 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { Ceremony } from "@/components/ceremony";
-import { Button, Notice, fieldClass } from "@/components/qwill-ui";
+import { Button, Notice } from "@/components/qwill-ui";
 import { Shell } from "@/components/shell";
-import { explainChainError, loadPacket, loadRegistry } from "@/lib/qwill/chain";
-import { formatWhen, readFile } from "@/lib/qwill/format";
-import { deadline, isClaimKey, isPacket, parseJson, statusLabel, willStatus, type SealedPacket } from "@/lib/qwill/protocol";
+import { connectQorex, explainChainError, loadRegistry, loadWills } from "@/lib/qwill/chain";
+import { formatWhen } from "@/lib/qwill/format";
+import { deadline, statusLabel, willStatus, type SealedPacket } from "@/lib/qwill/protocol";
 import { useWills } from "@/lib/qwill/store";
-import type { Hex } from "viem";
 
 export const Route = createFileRoute("/claim")({
   component: ClaimPage,
@@ -23,63 +22,27 @@ function ClaimPage() {
 
 function Claim() {
   const onThisPhone = useWills((state) => state.wills);
-  const [text, setText] = useState("");
   const [packet, setPacket] = useState<SealedPacket | null>(null);
+  const [fromChain, setFromChain] = useState<SealedPacket[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [now] = useState(() => Date.now());
-  const [registry, setRegistry] = useState(() => loadRegistry() ?? "");
-  const [willId, setWillId] = useState("");
   const [loading, setLoading] = useState(false);
 
-  function usePacket(next: SealedPacket) {
-    setPacket(next);
-    setText("");
-    setError(null);
-  }
+  const names = new Map<string, SealedPacket>();
+  for (const will of onThisPhone) names.set(will.packet.id, will.packet);
+  for (const item of fromChain) names.set(item.id, item);
+  const choices = [...names.values()];
 
-  function accept(raw: string) {
-    const trimmed = raw.trim();
-    setText(raw);
-    let parsed: unknown;
-    try {
-      parsed = parseJson(trimmed);
-    } catch {
-      const start = trimmed.indexOf("{");
-      const end = trimmed.lastIndexOf("}");
-      if (start === -1 || end <= start) {
-        setPacket(null);
-        setError("That paste is incomplete. It was cut off. Use the will on this phone instead of pasting.");
-        return;
-      }
-      try {
-        parsed = parseJson(trimmed.slice(start, end + 1));
-      } catch {
-        setPacket(null);
-        setError("That paste is incomplete. It was cut off. Use the will on this phone instead of pasting.");
-        return;
-      }
-    }
-    if (isClaimKey(parsed)) {
-      setPacket(null);
-      setError("That is an heir key, not the will. Pick the will first. The key goes in the lower box.");
-      return;
-    }
-    if (!isPacket(parsed)) {
-      setPacket(null);
-      setError("That is not a sealed will.");
-      return;
-    }
-    setError(null);
-    setPacket(parsed);
-  }
-
-  async function fromChain() {
+  async function loadNames() {
     setLoading(true);
     setError(null);
     try {
-      const address = registry.trim() as Hex;
-      if (!address.startsWith("0x") || !willId.trim()) throw new Error("Enter the contract and the will id.");
-      usePacket(await loadPacket(address, willId.trim()));
+      const registry = loadRegistry();
+      if (!registry) throw new Error("Open this page in the QoreX app, on the phone where you created the will.");
+      const account = await connectQorex();
+      const found = await loadWills(account, registry);
+      if (found.length === 0) throw new Error("This wallet has no will on the contract.");
+      setFromChain(found.map((item) => item.packet));
     } catch (err) {
       setError(explainChainError(err));
     } finally {
@@ -92,72 +55,21 @@ function Claim() {
   return (
     <div>
       <h1 className="font-display text-4xl text-ivory">Open a will</h1>
-      <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
-        Pick the will. Do not paste it. The paste is long and the phone cuts it off.
-      </p>
-      {onThisPhone.length > 0 ? (
+      <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">Tap the name. There is nothing to paste.</p>
+      {choices.length > 0 ? (
         <div className="mt-6 flex flex-col gap-2">
-          {onThisPhone.map((will) => (
-            <Button key={will.packet.id} variant="quiet" onClick={() => usePacket(will.packet)}>
-              {will.packet.title}
+          {choices.map((item) => (
+            <Button key={item.id} variant="quiet" onClick={() => { setPacket(item); setError(null); }}>
+              {item.title}
             </Button>
           ))}
         </div>
       ) : (
-        <p className="mt-6 text-sm text-muted">No will is saved on this phone.</p>
+        <p className="mt-6 text-sm text-muted">No will is on this phone yet.</p>
       )}
-      <div className="mt-8 space-y-2">
-        <p className="text-sm text-ivory">Or load it from the contract</p>
-        <input
-          className={fieldClass}
-          value={registry}
-          placeholder="Contract address"
-          spellCheck={false}
-          onChange={(event) => setRegistry(event.target.value)}
-        />
-        <input
-          className={fieldClass}
-          value={willId}
-          placeholder="Will id"
-          spellCheck={false}
-          onChange={(event) => setWillId(event.target.value)}
-        />
-        <Button disabled={loading} onClick={() => void fromChain()}>
-          {loading ? "Loading…" : "Load from the chain"}
-        </Button>
-      </div>
-      <label className="mt-8 block">
-        <span className="mb-2 flex items-center justify-between text-sm text-ivory">
-          Sealed will
-          <span className="inline-flex min-h-11 cursor-pointer items-center text-muted">
-            Load file
-            <input
-              type="file"
-              accept="application/json,.json"
-              className="sr-only"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                void readFile(file).then(accept);
-              }}
-            />
-          </span>
-        </span>
-        <textarea
-          className={fieldClass}
-          rows={5}
-          value={text}
-          placeholder="Paste the sealed will"
-          onChange={(event) => {
-            setText(event.target.value);
-            setPacket(null);
-            setError(null);
-          }}
-        />
-      </label>
       <div className="mt-4">
-        <Button disabled={text.trim().length === 0} onClick={() => accept(text)}>
-          Read the will
+        <Button disabled={loading} onClick={() => void loadNames()}>
+          {loading ? "Waiting on QoreX…" : "Load the names from the chain"}
         </Button>
       </div>
       {error ? (
