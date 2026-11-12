@@ -223,48 +223,9 @@ function WillView({ will }: { will: StoredWill }) {
       </section>
 
       <section className="mt-10">
-        <h2 className="font-display text-2xl text-ivory">Opening</h2>
+        <h2 className="font-display text-2xl text-ivory">Letter</h2>
         <div className="mt-4">
-          <Ceremony packet={will.packet} now={now} keys={keys ?? []} />
-        </div>
-      </section>
-
-      <section className="mt-10">
-        <h2 className="font-display text-2xl text-ivory">If a normal key is stolen</h2>
-        <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
-          The ordinary signature is checked for real. If it verifies, the old lock opened. QWILL still refuses the
-          check-in, the cancel, and the share.
-        </p>
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <Button variant="quiet" disabled={busy || status === "revoked"} onClick={() => void showStolen("beat")}>
-            Stolen key checks in
-          </Button>
-          <Button variant="quiet" disabled={busy || status === "revoked"} onClick={() => void showStolen("cancel")}>
-            Stolen key cancels
-          </Button>
-        </div>
-      </section>
-
-      <ChainRecord will={will} keys={keys ?? []} />
-
-      <section className="mt-10">
-        <h2 className="font-display text-2xl text-ivory">Files</h2>
-        <p className="mt-3 text-sm leading-relaxed text-muted">
-          The newest sealed file is the record. After a check-in, download it again. An older file still looks quiet.
-        </p>
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <Button variant="quiet" onClick={() => downloadJson(packetFileName(will.packet.title), will.packet)}>
-            Download sealed will
-          </Button>
-          <Button variant="quiet" onClick={() => downloadJson("founder.qwill-key.json", will.founder)}>
-            Download founder key
-          </Button>
-          <LinkButton to="/wills/$willId/rehearse" params={{ willId: will.packet.id }} variant="quiet">
-            Rehearse
-          </LinkButton>
-        </div>
-        <div className="mt-4">
-          <Button variant="ghost" onClick={() => void read()}>
+          <Button variant="quiet" onClick={() => void read()}>
             {plain ? "Hide the letter" : "Read what you sealed"}
           </Button>
           {readError ? (
@@ -274,38 +235,68 @@ function WillView({ will }: { will: StoredWill }) {
           ) : null}
           {plain ? (
             <article className="mt-4 rounded-lg border border-line bg-ink-2 p-5">
-              <p className="text-sm text-muted">Letter</p>
-              <p className="mt-3 whitespace-pre-wrap font-display text-xl leading-relaxed text-ivory">{plain.letter}</p>
+              <p className="whitespace-pre-wrap font-display text-xl leading-relaxed text-ivory">{plain.letter}</p>
               <p className="mt-6 text-sm text-muted">Secret</p>
               <p className="mt-2 whitespace-pre-wrap break-words text-ivory">{plain.secret}</p>
-              <p className="mt-4 text-sm text-muted">Anyone with this device can read this. The heirs still need each other.</p>
             </article>
           ) : null}
         </div>
       </section>
 
-      <section className="mt-10">
-        <h2 className="font-display text-2xl text-ivory">Record</h2>
-        <ul className="mt-4 space-y-2 text-sm text-muted">
-          <li>Sealed {formatWhen(will.packet.createdAt)}</li>
-          {will.packet.beats
-            .filter((beat) => beat.at !== will.packet.createdAt)
-            .map((beat) => (
-              <li key={beat.at}>Checked in {formatWhen(beat.at)}</li>
-            ))}
-          {will.packet.veto ? <li>Cancelled {formatWhen(will.packet.veto.at)}</li> : null}
-          {will.notes
-            .filter(
-              (note) =>
-                note.text.includes("ordinary") || note.text.startsWith("Imported") || note.text.startsWith("Restored"),
-            )
-            .map((note) => (
-              <li key={`${note.at}-${note.text}`}>
-                {formatWhen(note.at)} — {note.text}
-              </li>
-            ))}
-        </ul>
-      </section>
+      <ChainRecord will={will} keys={keys ?? []} />
+
+      <details className="mt-10">
+        <summary className="text-sm text-muted">Heir keys, backups, and the stolen-key check</summary>
+        <section className="mt-6">
+          <h2 className="font-display text-2xl text-ivory">Opening</h2>
+          <div className="mt-4">
+            <Ceremony packet={will.packet} now={now} keys={keys ?? []} />
+          </div>
+        </section>
+
+        <section className="mt-10">
+          <h2 className="font-display text-2xl text-ivory">If a normal key is stolen</h2>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
+            An ordinary signature can be real and still do nothing. The deadline does not move.
+          </p>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <Button variant="quiet" disabled={busy || status === "revoked"} onClick={() => void showStolen("beat")}>
+              Stolen key checks in
+            </Button>
+            <Button variant="quiet" disabled={busy || status === "revoked"} onClick={() => void showStolen("cancel")}>
+              Stolen key cancels
+            </Button>
+          </div>
+        </section>
+
+        <section className="mt-10">
+          <h2 className="font-display text-2xl text-ivory">Files</h2>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <Button variant="quiet" onClick={() => downloadJson(packetFileName(will.packet.title), will.packet)}>
+              Download sealed will
+            </Button>
+            <Button variant="quiet" onClick={() => downloadJson("founder.qwill-key.json", will.founder)}>
+              Download founder key
+            </Button>
+            <LinkButton to="/wills/$willId/rehearse" params={{ willId: will.packet.id }} variant="quiet">
+              Rehearse
+            </LinkButton>
+          </div>
+        </section>
+
+        <section className="mt-10">
+          <h2 className="font-display text-2xl text-ivory">Record</h2>
+          <ul className="mt-4 space-y-2 text-sm text-muted">
+            <li>Sealed {formatWhen(will.packet.createdAt)}</li>
+            {will.packet.beats
+              .filter((beat) => beat.at !== will.packet.createdAt)
+              .map((beat) => (
+                <li key={beat.at}>Checked in {formatWhen(beat.at)}</li>
+              ))}
+            {will.packet.veto ? <li>Cancelled {formatWhen(will.packet.veto.at)}</li> : null}
+          </ul>
+        </section>
+      </details>
 
       <section className="mt-12 border-t border-line pt-6">
         {armRemove ? (

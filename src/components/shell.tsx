@@ -26,7 +26,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </header>
       <main className="mx-auto w-full max-w-3xl px-5 py-8">{children}</main>
       <footer className="mx-auto max-w-3xl px-5 pb-12 text-sm text-muted">
-        Your will stays on this device unless you export it.
+        The locked letter is on the chain. The password opens it on a new phone.
       </footer>
     </div>
   );

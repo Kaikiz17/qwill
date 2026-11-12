@@ -43,9 +43,9 @@ function Empty() {
       <div className="mt-8">
         <LinkButton to="/write">Write a will</LinkButton>
       </div>
-      <WalletLoad />
       <details className="mt-12">
-        <summary className="text-sm text-muted">Restore a will</summary>
+        <summary className="text-sm text-muted">This phone is new</summary>
+        <WalletLoad />
         <RestoreForm />
       </details>
     </div>
@@ -60,7 +60,6 @@ function List({ now }: { now: number }) {
         <h1 className="font-display text-4xl text-ivory">Your wills</h1>
         <LinkButton to="/write">Write</LinkButton>
       </div>
-      <WalletLoad />
       <ul className="mt-8 space-y-3">
         {wills.map((will) => {
           const status = willStatus(will.packet, now);
@@ -91,7 +90,8 @@ function List({ now }: { now: number }) {
         })}
       </ul>
       <details className="mt-10">
-        <summary className="text-sm text-muted">Restore a will</summary>
+        <summary className="text-sm text-muted">Load a will onto this phone</summary>
+        <WalletLoad />
         <RestoreForm />
       </details>
     </div>

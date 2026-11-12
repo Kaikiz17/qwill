@@ -119,6 +119,10 @@ function WriteForm() {
         {account ? <p className="break-all text-sm text-muted">{account}</p> : null}
       </div>
 
+      {!account ? (
+        error ? <Notice>{error}</Notice> : null
+      ) : (
+        <>
       <label className="block">
         <span className="mb-2 block text-sm text-ivory">Name</span>
         <input className={fieldClass} value={title} maxLength={80} placeholder="For my sister" onChange={(event) => setTitle(event.target.value)} />
@@ -243,9 +247,11 @@ function WriteForm() {
 
       {error ? <Notice>{error}</Notice> : null}
 
-      <Button type="submit" disabled={busy || !account || password.trim().length < 8}>
+      <Button type="submit" disabled={busy || password.trim().length < 8}>
         {busy ? "Waiting on QoreX…" : "Create the will"}
       </Button>
+        </>
+      )}
     </form>
   );
 }
