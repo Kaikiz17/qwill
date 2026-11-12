@@ -98,6 +98,11 @@ function WriteForm() {
           QoreX signs it, and the locked letter goes on the chain as soon as you create it. It does not sit only on this
           phone. Heirs still need the keys you give them, and they need each other.
         </p>
+        <Notice>
+          Before you create it, open the EVM window in the QoreX app. Set the spending cap to 20 QOR and allow 20
+          transactions. A short letter is one or two approvals. A long letter asks again for each piece. If QoreX
+          refuses, the will is not created.
+        </Notice>
       </div>
 
       <div className="flex flex-col gap-2">
