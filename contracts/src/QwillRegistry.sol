@@ -16,7 +16,9 @@ contract QwillRegistry {
     uint64 public constant MIN_INTERVAL = 3_600_000;
     uint64 public constant MAX_INTERVAL = 31_622_400_000;
     uint256 public constant SKEW = 300_000;
-    uint256 public constant MAX_BLOB = 96_000;
+    uint256 public constant PIECE = 12_000;
+    uint256 public constant MAX_BLOB = 1_048_576;
+    uint256 public constant MAX_PIECES = 88;
 
     struct Will {
         address registrar;
@@ -37,8 +39,10 @@ contract QwillRegistry {
     mapping(bytes32 => string[]) private _heirIds;
     mapping(bytes32 => bytes32) private _heirHash;
     mapping(bytes32 => bool) private _heirUsed;
-    mapping(bytes32 => bytes) private _letter;
-    mapping(bytes32 => bytes) private _vault;
+    mapping(bytes32 => bytes32[]) private _letterParts;
+    mapping(bytes32 => bytes32[]) private _vaultParts;
+    mapping(bytes32 => bytes[]) private _letterPieces;
+    mapping(bytes32 => bytes[]) private _vaultPieces;
     mapping(address => string[]) private _byWallet;
 
     event WillSealed(bytes32 indexed willKey, address indexed registrar, uint64 intervalMs, uint8 threshold);
@@ -59,6 +63,7 @@ contract QwillRegistry {
     error Heir();
     error Empty();
     error Huge();
+    error Piece();
 
     function seal(
         string calldata willId,
@@ -69,8 +74,10 @@ contract QwillRegistry {
         bytes[] calldata heirKeys,
         bytes calldata founderKey,
         bytes calldata signature,
-        bytes calldata letter,
-        bytes calldata vault
+        bytes32 packetHash,
+        bytes32 vaultHash,
+        bytes32[] calldata letterParts,
+        bytes32[] calldata vaultParts
     ) external {
         bytes32 willKey = _id(willId);
         if (_wills[willKey].exists) revert Exists();
@@ -78,8 +85,8 @@ contract QwillRegistry {
         if (count < 2 || count > 5 || heirKeys.length != count) revert Heirs();
         if (threshold < 2 || threshold > count) revert Heirs();
         if (intervalMs < MIN_INTERVAL || intervalMs > MAX_INTERVAL) revert Interval();
-        if (letter.length == 0 || vault.length == 0) revert Empty();
-        if (letter.length > MAX_BLOB || vault.length > MAX_BLOB) revert Huge();
+        if (letterParts.length == 0 || vaultParts.length == 0) revert Empty();
+        if (letterParts.length > MAX_PIECES || vaultParts.length > MAX_PIECES) revert Huge();
         _near(recordedAt);
 
         bytes memory message = previewSeal(
@@ -90,8 +97,10 @@ contract QwillRegistry {
             heirIds,
             heirKeys,
             founderKey,
-            letter,
-            vault
+            packetHash,
+            vaultHash,
+            letterParts,
+            vaultParts
         );
         _requirePq(founderKey, signature, message);
 
@@ -116,11 +125,35 @@ contract QwillRegistry {
             _heirIds[willKey].push(heirIds[i]);
         }
 
-        _letter[willKey] = letter;
-        _vault[willKey] = vault;
+        _letterParts[willKey] = letterParts;
+        _vaultParts[willKey] = vaultParts;
         _byWallet[msg.sender].push(willId);
 
         emit WillSealed(willKey, msg.sender, intervalMs, threshold);
+    }
+
+    function put(
+        string calldata willId,
+        bool vault,
+        uint256 index,
+        bytes calldata piece,
+        uint64 at,
+        bytes calldata founderKey,
+        bytes calldata signature
+    ) external {
+        Will storage will = _existing(willId);
+        if (will.cancelled) revert Done();
+        if (keccak256(founderKey) != will.founderHash) revert Key();
+        _near(at);
+        bytes32 willKey = _id(willId);
+        bytes32[] storage expect = vault ? _vaultParts[willKey] : _letterParts[willKey];
+        bytes[] storage have = vault ? _vaultPieces[willKey] : _letterPieces[willKey];
+        if (index != have.length || index >= expect.length) revert Piece();
+        if (piece.length == 0 || piece.length > PIECE) revert Huge();
+        if (index + 1 < expect.length && piece.length != PIECE) revert Huge();
+        if (keccak256(piece) != expect[index]) revert Piece();
+        _requirePq(founderKey, signature, previewPut(willId, vault, index, piece, at));
+        have.push(piece);
     }
 
     function checkIn(string calldata willId, uint64 at, bytes calldata founderKey, bytes calldata signature) external {
@@ -216,11 +249,24 @@ contract QwillRegistry {
     }
 
     function letterOf(string calldata willId) external view returns (bytes memory) {
-        return _letter[_id(willId)];
+        return _join(_letterPieces[_id(willId)]);
     }
 
     function vaultOf(string calldata willId) external view returns (bytes memory) {
-        return _vault[_id(willId)];
+        return _join(_vaultPieces[_id(willId)]);
+    }
+
+    function letterCount(string calldata willId) external view returns (uint256) {
+        return _letterPieces[_id(willId)].length;
+    }
+
+    function vaultCount(string calldata willId) external view returns (uint256) {
+        return _vaultPieces[_id(willId)].length;
+    }
+
+    function pieceOf(string calldata willId, bool vault, uint256 index) external view returns (bytes memory) {
+        bytes[] storage have = vault ? _vaultPieces[_id(willId)] : _letterPieces[_id(willId)];
+        return have[index];
     }
 
     function keyHashHex(bytes calldata key) external pure returns (string memory) {
@@ -251,12 +297,14 @@ contract QwillRegistry {
         string[] memory heirIds,
         bytes[] memory heirKeys,
         bytes memory founderKey,
-        bytes memory letter,
-        bytes memory vault
+        bytes32 packetHash,
+        bytes32 vaultHash,
+        bytes32[] memory letterParts,
+        bytes32[] memory vaultParts
     ) public pure returns (bytes memory) {
         _checkId(willId);
         if (founderKey.length != DSA_LEN) revert Key();
-        if (letter.length == 0 || vault.length == 0) revert Empty();
+        if (letterParts.length == 0 || vaultParts.length == 0) revert Empty();
         return bytes(
             string.concat(
                 "action=seal\nat=",
@@ -266,12 +314,37 @@ contract QwillRegistry {
                 "\ninterval=",
                 _dec(intervalMs),
                 "\npacket=",
-                _hex(keccak256(letter)),
+                _hex(packetHash),
+                "\nparts=",
+                _parts(letterParts, vaultParts),
                 "\nthreshold=",
                 _dec(threshold),
                 "\nv=1\nvault=",
-                _hex(keccak256(vault)),
+                _hex(vaultHash),
                 "\nwill=",
+                willId
+            )
+        );
+    }
+
+    function previewPut(string memory willId, bool vault, uint256 index, bytes memory piece, uint64 at)
+        public
+        pure
+        returns (bytes memory)
+    {
+        _checkId(willId);
+        if (piece.length == 0) revert Empty();
+        return bytes(
+            string.concat(
+                "action=put\nat=",
+                _dec(at),
+                "\nindex=",
+                _dec(index),
+                "\nkind=",
+                vault ? "vault" : "letter",
+                "\npart=",
+                _hex(keccak256(piece)),
+                "\nv=1\nwill=",
                 willId
             )
         );
@@ -320,6 +393,21 @@ contract QwillRegistry {
             bytes1 c = raw[i];
             bool ok = (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a) || c == 0x2d;
             if (!ok) revert BadId();
+        }
+    }
+
+    function _join(bytes[] storage parts) internal view returns (bytes memory out) {
+        for (uint256 i = 0; i < parts.length; i++) out = bytes.concat(out, parts[i]);
+    }
+
+    function _parts(bytes32[] memory letterParts, bytes32[] memory vaultParts) internal pure returns (string memory) {
+        return string.concat(_hashes(letterParts), "|", _hashes(vaultParts));
+    }
+
+    function _hashes(bytes32[] memory parts) internal pure returns (string memory out) {
+        for (uint256 i = 0; i < parts.length; i++) {
+            string memory next = _hex(parts[i]);
+            out = i == 0 ? next : string.concat(out, ",", next);
         }
     }
 

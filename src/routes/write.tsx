@@ -4,9 +4,8 @@ import { Button, LinkButton, Notice, fieldClass } from "@/components/qwill-ui";
 import { Shell } from "@/components/shell";
 import {
   connectQorex,
-  deployRegistry,
+  ensureRegistry,
   explainChainError,
-  loadRegistry,
   readWill,
   sealOnChain,
 } from "@/lib/qwill/chain";
@@ -75,7 +74,7 @@ function WriteForm() {
         keepClaimKeys: keep,
         now: Date.now(),
       });
-      const registry = loadRegistry() ?? (await deployRegistry(account));
+      const registry = await ensureRegistry(account);
       await sealOnChain(will, account, registry, password.trim());
       const recorded = await readWill(registry, will.packet.id);
       if (!recorded.exists) throw new Error("The chain did not keep this will. It was not created.");

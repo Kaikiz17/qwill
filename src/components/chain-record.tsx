@@ -7,6 +7,7 @@ import {
   clearRegistry,
   connectQorex,
   deployRegistry,
+  ensureRegistry,
   explainChainError,
   loadRegistry,
   loadWills,
@@ -74,9 +75,9 @@ export function ChainRecord({ will, keys }: { will: StoredWill; keys: ClaimKeyFi
         the keys you gave them. An ordinary signature is not enough for check-in, cancel, or a claim.
       </p>
       <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
-        The chain clock starts when you record the will. The QoreX window has to allow at least 8 QOR, or the letter is
-        too big and the chain refuses it. Open that window in the QoreX app, not on this page. Set the spending cap to 8
-        QOR and allow at least 5 transactions. Then come back and put the will on the chain. Testnet coins come from the{" "}
+        The chain clock starts when you record the will. A long letter is saved in pieces, each under the chain's gas
+        limit. Open the EVM window in the QoreX app and set the spending cap to 20 QOR, with at least 20 transactions.
+        Testnet coins come from the{" "}
         <a className="underline" href="https://dashboard.qorechain.io/faucet" target="_blank" rel="noreferrer">
           faucet
         </a>
@@ -151,8 +152,8 @@ export function ChainRecord({ will, keys }: { will: StoredWill; keys: ClaimKeyFi
               </div>
               <p className="max-w-xl text-sm text-muted">
                 QoreX will not let this page open the window. Open it in the QoreX app, on the home card or under Settings,
-                Security, EVM access window. Leave “native QOR only” off, allow at least 5 transactions, and set the spending
-                cap above a few QOR. That signature is hybrid, but it is not limited to this contract. QoreX has no screen
+                Security, EVM access window. Leave “native QOR only” off, allow at least 20 transactions, and set the spending
+                cap to 20 QOR. That signature is hybrid, but it is not limited to this contract. QoreX has no screen
                 for a one-contract window, and a website cannot create one.
               </p>
               <form
@@ -227,11 +228,8 @@ export function ChainRecord({ will, keys }: { will: StoredWill; keys: ClaimKeyFi
                 onClick={() =>
                   void run("seal", async () => {
                     if (!account) return;
-                    let next = registry;
-                    if (!next) {
-                      next = await deployRegistry(account);
-                      setRegistry(next);
-                    }
+                    const next = await ensureRegistry(account);
+                    setRegistry(next);
                     const tx = await sealOnChain(will, account, next, password);
                     setHash(tx);
                     setPassword("");
